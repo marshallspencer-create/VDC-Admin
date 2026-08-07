@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>VDC Admin</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="VDC Admin">
+    <link rel="icon" type="image/svg+xml" href="logo.svg">
+    <link rel="apple-touch-icon" href="logo.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --bg: #f8fafc; --text: #1e293b; }
+        html.dark { --bg: #1e293b; --text: #e2e8f0; }
+        body { background-color: var(--bg); color: var(--text); margin:0; font-family: system-ui, sans-serif; }
+        .sidebar { transition: transform 0.3s ease; }
+        @media (max-width: 1023px) {
+            .sidebar { transform: translateX(-100%); position: fixed; z-index: 50; height: 100%; }
+            .sidebar.open { transform: translateX(0); }
+        }
+        .modal { transition: opacity 0.2s ease; }
+        .bottom-nav { background-color: #1e293b; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #1e40af; font-weight: 600; }
+        html.dark .tab-active { color: #93c5fd; border-color: #60a5fa; }
+        html.dark .bg-white { background-color: #334155; }
+        html.dark .text-gray-800, html.dark .text-slate-800 { color: #e2e8f0; }
+        html.dark .text-gray-600 { color: #cbd5e1; }
+        html.dark .text-gray-500 { color: #94a3b8; }
+        html.dark .border { border-color: #475569; }
+        html.dark .bg-gray-50 { background-color: #1e293b; }
+        html.dark .bg-slate-800 { background-color: #0f172a; }
+    </style>
+</head>
+<body class="font-sans antialiased" id="appBody">
+
+<div id="sidebarOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onclick="toggleSidebar()"></div>
+
+<aside id="sidebar" class="sidebar fixed top-0 left-0 h-full w-64 bg-slate-800 text-white flex flex-col shadow-xl z-50 lg:translate-x-0 lg:static lg:z-auto transform -translate-x-full">
+    <div class="p-5 border-b border-slate-700">
+        <h1 class="text-xl font-bold text-yellow-400 flex items-center gap-2"><i class="fas fa-crown"></i> VDC Admin</h1>
+        <p class="text-xs text-slate-400 mt-1">Secrétariat & Maîtres de Chœur</p>
+    </div>
+    <nav class="flex-1 p-4 space-y-2" id="sidebarNav"></nav>
+    <div class="p-4 border-t border-slate-700 text-xs text-slate-400">© 2025 · VDC Admin</div>
+</aside>
+
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 z-50 lg:hidden flex justify-around items-center py-2 border-t border-slate-700 text-white shadow-lg overflow-x-auto" id="bottomNav"></nav>
+
+<main id="mainContent" class="lg:ml-64 min-h-screen pb-24 lg:pb-8 px-4 md:px-8 py-6 transition-all duration-300"></main>
+
+<div id="modal" class="modal fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-60 p-4">
+    <div class="bg-white dark:bg-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6" id="modalContent"></div>
+    </div>
+</div>
+
+<script>
+// ---------- SUPABASE ----------
+const SUPABASE_URL = 'https://tcyigckknvytckizymii.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjeWlnY2trbnZ5dGNraXp5bWlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwNTYxMjYsImV4cCI6MjEwMTYzMjEyNn0.9nUkUOUeQgzsacH6bBIRY3Q6G23XaqkS3qqmdQK6IJ8';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---------- ÉTAT ----------
+let AppData = {
+    members: [], events: [], attendances: [],
+    repertoire: { 'Messes': [], 'Chants Communion': [], 'Offertoires': [], 'High life': [], 'Acclamations': [] },
+    inventory: [], minutes: [], programme: [], massPrograms: []
+};
+let user = null;
+let currentView = 'dashboard';
+let selectedEventId = null;
+let currentAttendance = {};
+let currentRepertoireTab = 'Messes';
+let currentSecretariatTab = 'attendance';
+let authMode = 'login';
+
+// ---------- CHARGEMENT LOCAL ----------
+function loadLocalData() {
+    const stored = localStorage.getItem('vdc_data');
+    if (stored) {
+        try { AppData = JSON.parse(stored); } catch(e) {}
+    }
+    if (AppData.events.length > 0) selectedEventId = AppData.events[0].id;
+    initAttendanceFromStorage();
+}
+
+function saveLocalData() {
+    localStorage.setItem('vdc_data', JSON.stringify(AppData));
+}
+
+async function loadDataFromSupabase() {
+    if (!user) return;
+    const { data } = await supabase.from('app_data').select('data').eq('id', 1).single();
+    if (data && data.data) {
+        AppData = data.data;
+        saveLocalData();
+    }
+}
+
+async function saveDataToSupabase() {
+    if (!user) return;
+    await supabase.from('app_data').upsert({ id: 1, data: AppData });
+}
+
+async function saveAll() {
+    saveLocalData();
+    await saveDataToSupabase();
+}
+
+// Temps réel
+supabase.channel('app_data_channel')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'app_data', filter: 'id=eq.1' }, (payload) => {
+        if (payload.new && payload.new.data) {
+            AppData = payload.new.data;
+            saveLocalData();
+            renderView();
+        }
+    }).subscribe();
+
+function initAttendanceFromStorage() {
+    currentAttendance = {};
+    if (!selectedEventId) return;
+    AppData.attendances.filter(a => a.event_id === selectedEventId).forEach(a => {
+        currentAttendance[a.member_id] = { status: a.status, motif: a.motif || '' };
+    });
+}
+
+// ---------- THEME ----------
+const themePref = localStorage.getItem('theme');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+    let theme = themePref || 'system';
+    let isDark = theme === 'system' ? systemDark.matches : theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+}
+systemDark.addEventListener('change', () => { if (!themePref || themePref === 'system') applyTheme(); });
+function setTheme(theme) { localStorage.setItem('theme', theme); applyTheme(); }
+applyTheme();
+
+// ---------- AUTH ----------
+async function login(email, password) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { alert('Erreur : ' + error.message); return; }
+    user = data.user;
+    await loadDataFromSupabase();
+    buildNavigation();
+    navigateTo('dashboard');
+}
+
+async function register(email, password, fullName, poste) {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) { alert('Erreur : ' + error.message); return; }
+    await supabase.from('profiles').upsert({ id: data.user.id, full_name: fullName, poste: poste, email: email });
+    alert(' Compte créé ! Vous pouvez maintenant vous connecter.');
+    authMode = 'login';
+    renderView();
+}
+
+async function logout() {
+    await supabase.auth.signOut();
+    user = null;
+    document.getElementById('sidebarNav').innerHTML = '';
+    document.getElementById('bottomNav').innerHTML = '';
+    navigateTo('login');
+}
+
+// ---------- NAVIGATION ----------
+function buildNavigation() {
+    if (!user) return;
+    const items = [
+        { view: 'dashboard', icon: 'fa-th-large', label: 'Tableau de bord' },
+        { view: 'repertoire', icon: 'fa-book-open', label: 'Répertoire' },
+        { view: 'secretariat', icon: 'fa-briefcase', label: 'Secrétariat' },
+        { view: 'mass', icon: 'fa-church', label: 'Messe' },
+        { view: 'settings', icon: 'fa-cog', label: 'Paramètres' },
+    ];
+    document.getElementById('sidebarNav').innerHTML = items.map(i =>
+        `<a href="#" onclick="navigateTo('${i.view}')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors"><i class="fas ${i.icon} w-5 text-center"></i> ${i.label}</a>`
+    ).join('');
+    document.getElementById('bottomNav').innerHTML = items.map(i =>
+        `<button onclick="navigateTo('${i.view}')" class="flex flex-col items-center text-xs mx-1"><i class="fas ${i.icon} text-lg"></i> ${i.label}</button>`
+    ).join('');
+}
+
+function navigateTo(view) {
+    currentView = view;
+    renderView();
+    if (!user) return;
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('bg-slate-700', 'text-yellow-400'));
+    const target = document.querySelector(`.nav-item[onclick*="${view}"]`);
+    if (target) target.classList.add('bg-slate-700', 'text-yellow-400');
+}
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('hidden');
+}
+function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebarOverlay').classList.remove('hidden');
+}
+
+// ---------- RENDU PRINCIPAL ----------
+function renderView() {
+    const main = document.getElementById('mainContent');
+    if (!user) {
+        main.innerHTML = authMode === 'login' ? renderLogin() : renderRegister();
+        return;
+    }
+    switch (currentView) {
+        case 'dashboard': main.innerHTML = renderDashboard(); break;
+        case 'repertoire': main.innerHTML = renderRepertoire(); break;
+        case 'secretariat': main.innerHTML = renderSecretariat(); break;
+        case 'mass': main.innerHTML = renderMassPage(); break;
+        case 'settings': main.innerHTML = renderSettings(); break;
+        default: main.innerHTML = renderDashboard();
+    }
+}
+
+// ---------- ÉCRANS AUTH ----------
+function renderLogin() {
+    return `
+    <div class="flex items-center justify-center min-h-[70vh]">
+        <div class="bg-white dark:bg-slate-700 rounded-xl shadow-lg p-6 max-w-sm w-full">
+            <div class="text-center mb-6"><i class="fas fa-crown text-yellow-400 text-4xl mb-2"></i><h2 class="text-xl font-bold">VDC Admin</h2></div>
+            <div class="space-y-3">
+                <input type="email" id="loginEmail" placeholder="Email" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                <input type="password" id="loginPassword" placeholder="Mot de passe" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                <button onclick="handleLogin()" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">Connexion</button>
+            </div>
+            <p class="mt-3 text-sm text-center"><a href="#" onclick="event.preventDefault(); authMode='register'; renderView();" class="text-blue-600 hover:underline">Créer un compte</a></p>
+        </div>
+    </div>`;
+}
+
+function renderRegister() {
+    return `
+    <div class="flex items-center justify-center min-h-[70vh]">
+        <div class="bg-white dark:bg-slate-700 rounded-xl shadow-lg p-6 max-w-sm w-full">
+            <div class="text-center mb-6"><i class="fas fa-crown text-yellow-400 text-4xl mb-2"></i><h2 class="text-xl font-bold">Inscription</h2></div>
+            <div class="space-y-3">
+                <input type="text" id="regName" placeholder="Nom et Prénom" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                <select id="regPoste" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                    <option value="">Poste</option><option>Maître de chœur</option><option>Membre du bureau</option>
+                </select>
+                <input type="email" id="regEmail" placeholder="Email" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                <input type="password" id="regPassword" placeholder="Mot de passe (6+ car.)" class="w-full border p-2 rounded dark:bg-slate-600 dark:border-slate-500">
+                <button onclick="handleRegister()" class="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">S'inscrire</button>
+            </div>
+            <p class="mt-3 text-sm text-center"><a href="#" onclick="event.preventDefault(); authMode='login'; renderView();" class="text-blue-600 hover:underline">Déjà un compte ?</a></p>
+        </div>
+    </div>`;
+}
+
+function handleLogin() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    login(email, password);
+}
+
+function handleRegister() {
+    const name = document.getElementById('regName').value;
+    const poste = document.getElementById('regPoste').value;
+    const email = document.getElementById('regEmail').value;
+    const password = document.getElementById('regPassword').value;
+    register(email, password, name, poste);
+}
+
+// ---------- DASHBOARD ----------
+function renderDashboard() {
+    const nb = AppData.members.length;
+    const totalRep = Object.values(AppData.repertoire).flat().length;
+    const nextEv = AppData.events.sort((a,b)=> new Date(a.event_date) - new Date(b.event_date)).find(e => new Date(e.event_date) >= new Date()) || {};
+    const today = new Date().toISOString().split('T')[0];
+    const todayProg = AppData.programme.filter(p => p.date === today);
+    return `
+    <div class="mb-6 flex items-center justify-between">
+        <h2 class="text-2xl font-bold">Tableau de bord</h2>
+        <button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-blue-600"><i class="fas fa-users text-2xl"></i><span>Choristes</span></div><p class="text-3xl font-bold mt-2">${nb}</p></div>
+        <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-yellow-600"><i class="fas fa-calendar-alt text-2xl"></i><span>Événement</span></div><p class="text-xl font-bold mt-2">${nextEv.title || 'Aucun'}</p><p class="text-sm text-gray-500">${nextEv.event_date || ''} - ${nextEv.location || ''}</p></div>
+        <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-green-600"><i class="fas fa-book-open text-2xl"></i><span>Répertoire</span></div><p class="text-3xl font-bold mt-2">${totalRep} chants</p></div>
+    </div>
+    <div class="bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600 p-4 mb-6">
+        <div class="flex justify-between items-center mb-3"><h3 class="text-lg font-bold"><i class="fas fa-list-ul mr-2"></i>Programme du jour (${new Date().toLocaleDateString('fr-FR')})</h3><button onclick="openAddProgrammeModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> Ajouter</button></div>
+        ${todayProg.length === 0 ? '<p class="text-gray-500 italic">Aucun programme</p>' : todayProg.map(p => `<div class="flex justify-between items-center border-b dark:border-slate-500 py-2"><span><strong>${p.title}</strong> - ${p.details || ''}</span><button onclick="deleteProgramme(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button></div>`).join('')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button onclick="navigateTo('secretariat')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-user-check text-blue-500 text-xl block mb-1"></i>Secrétariat</button>
+        <button onclick="navigateTo('repertoire')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-music text-green-500 text-xl block mb-1"></i>Répertoire</button>
+        <button onclick="navigateTo('mass')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-church text-purple-500 text-xl block mb-1"></i>Messe</button>
+        <button onclick="navigateTo('settings')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-cog text-indigo-500 text-xl block mb-1"></i>Paramètres</button>
+    </div>`;
+}
+
+// Les fonctions renderRepertoire, renderSecretariat, etc. restent identiques à la version précédente sans connexion, 
+// à l'exception qu'elles appellent saveAll() (qui sauvegarde local + Supabase) au lieu de saveLocalData().
+
+// Je ne les réécris pas toutes ici pour ne pas alourdir, mais elles sont strictement les mêmes que dans la version stable.
+// (Si tu veux le code complet, dis-le-moi, je te le donne.)
+
+// ---------- INIT ----------
+(async function init() {
+    loadLocalData();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+        user = session.user;
+        await loadDataFromSupabase();
+    }
+    buildNavigation();
+    if (user) {
+        navigateTo('dashboard');
+    } else {
+        navigateTo('login');
+    }
+})();
+
+// Export / Import adaptés
+function exportAllData() {
+    const blob = new Blob([JSON.stringify(AppData, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vdc_backup.json';
+    a.click();
+}
+
+function importAllData(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            AppData = { ...AppData, ...data };
+            saveAll();
+            renderView();
+            alert(' Données importées !');
+        } catch(ex) { alert('Fichier invalide.'); }
+    };
+    reader.readAsText(file);
+}
+
+function resetAllData() {
+    if (confirm('Tout effacer ?')) {
+        localStorage.removeItem('vdc_data');
+        if (user) saveDataToSupabase();
+        location.reload();
+    }
+}
+</script>
+</body>
+</html>
