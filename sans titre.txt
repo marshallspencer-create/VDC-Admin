@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <title>VDC Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root { --bg: #f8fafc; --text: #1e293b; }
+        html.dark { --bg: #1e293b; --text: #e2e8f0; }
+        body { background-color: var(--bg); color: var(--text); }
+        .sidebar { transition: transform 0.3s ease; }
+        @media (max-width: 1023px) {
+            .sidebar { transform: translateX(-100%); position: fixed; z-index: 50; height: 100%; }
+            .sidebar.open { transform: translateX(0); }
+        }
+        .modal { transition: opacity 0.2s ease; }
+        .bottom-nav { background-color: #1e293b; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #1e40af; font-weight: 600; }
+        html.dark .tab-active { color: #93c5fd; border-color: #60a5fa; }
+        html.dark .bg-white { background-color: #334155; }
+        html.dark .text-gray-800, html.dark .text-slate-800 { color: #e2e8f0; }
+        html.dark .text-gray-600 { color: #cbd5e1; }
+        html.dark .text-gray-500 { color: #94a3b8; }
+        html.dark .border { border-color: #475569; }
+        html.dark .bg-gray-50 { background-color: #1e293b; }
+        html.dark .bg-slate-800 { background-color: #0f172a; }
+        html.dark .shadow-sm { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3); }
+    </style>
+</head>
+<body class="font-sans antialiased" id="appBody">
+
+<div id="sidebarOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onclick="toggleSidebar()"></div>
+
+<aside id="sidebar" class="sidebar fixed top-0 left-0 h-full w-64 bg-slate-800 text-white flex flex-col shadow-xl z-50 lg:translate-x-0 lg:static lg:z-auto transform -translate-x-full">
+    <div class="p-5 border-b border-slate-700">
+        <h1 class="text-xl font-bold text-yellow-400 flex items-center gap-2"><i class="fas fa-crown"></i> VDC Admin</h1>
+        <p class="text-xs text-slate-400 mt-1">Secrétariat & Maîtres de Chœur</p>
+    </div>
+    <nav class="flex-1 p-4 space-y-2" id="sidebarNav"></nav>
+    <div class="p-4 border-t border-slate-700 text-xs text-slate-400">© 2025 · VDC Admin</div>
+</aside>
+
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 z-50 lg:hidden flex justify-around items-center py-2 border-t border-slate-700 text-white shadow-lg overflow-x-auto" id="bottomNav"></nav>
+
+<main id="mainContent" class="lg:ml-64 min-h-screen pb-24 lg:pb-8 px-4 md:px-8 py-6 transition-all duration-300"></main>
+
+<div id="modal" class="modal fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-60 p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="p-6" id="modalContent"></div>
+    </div>
+</div>
+
+<script>
+// ---------- TRADUCTIONS (Français) ----------
+const translations = {
+    fr: {
+        appName: "VDC Admin", subtitle: "Secrétariat & Maîtres de Chœur",
+        dashboard: "Tableau de bord", repertoire: "Répertoire", secretariat: "Secrétariat",
+        mass: "Messe", settings: "Paramètres",
+        attendance: "Liste de présence", events: "Événements", inventory: "Inventaire",
+        pv: "Procès-Verbaux", programme: "Programme du jour",
+        choirMembers: "Choristes", nextEvent: "Événement", repertoireCount: "chants",
+        add: "Ajouter", edit: "Modifier", save: "Enregistrer", cancel: "Annuler",
+        delete: "Supprimer", close: "Fermer", confirm: "Confirmer", noData: "Aucune donnée",
+        programmeToday: "Programme du jour", addProgramme: "Ajouter un programme",
+        editProgramme: "Modifier un programme", title: "Titre", details: "Détails",
+        date: "Date", type: "Type", heure: "Heure", paroisse: "Paroisse", quartier: "Quartier",
+        addEvent: "Ajouter un événement", editEvent: "Modifier un événement",
+        addMember: "Ajouter un membre", fullName: "Nom et Prénom", pupitre: "Pupitre",
+        situation: "Situation", motif: "Motif", present: "Présent", retard: "Retard", absent: "Absent",
+        saveAttendance: "Enregistrer les présences", addInventory: "Ajouter matériel",
+        addPV: "Nouveau PV", domaine: "Domaine", name: "Nom", quantity: "Quantité",
+        condition: "État", new: "Neuf", good: "Bon état", damaged: "Endommagé",
+        toReplace: "A remplacer", toRepair: "À réparer",
+        resetData: "Réinitialiser", exportData: "Exporter", importData: "Importer",
+        importSuccess: "Données importées.", resetConfirm: "Tout effacer ?",
+        eventType_messe: "Messe", eventType_concert: "Concert", eventType_rejouissances: "Réjouissances",
+        eventType_classe: "Classe de chant", eventType_autre: "Autre",
+        massTitle: "Programme de Messe", addMass: "Ajouter un programme", editMass: "Modifier",
+        massProcession: "Procession", massEntree: "Entrée", massKyrie: "Kyrie",
+        massGloria: "Gloria", massPsaume: "Psaume", massAcclamation: "Acclamation",
+        massEpiclese: "Épiclèse", massCredo: "Credo", massPU: "Prière universelle",
+        massOffrande: "Offrande", massSanctus: "Sanctus", massAgnusDei: "Agnus Dei",
+        massCommunion: "Communion", massQuete: "Quête construction", massEnvoi: "Envoi",
+        repertoireTab_messes: "Messes", repertoireTab_communion: "Chants Communion",
+        repertoireTab_offertoires: "Offertoires", repertoireTab_highlife: "High life",
+        repertoireTab_acclamations: "Acclamations",
+        themeSystem: "Système (auto)", themeLight: "Clair", themeDark: "Sombre",
+        darkMode: "Mode sombre", confirmDelete: "Supprimer ce chant ?",
+        selectEvent: "Sélectionner un événement", addEventFirst: "Ajoutez d'abord un événement"
+    }
+};
+let currentLang = 'fr';
+function _(key) { return translations[currentLang]?.[key] || key; }
+
+// ---------- THEME ----------
+const themePref = localStorage.getItem('theme');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+    let theme = themePref || 'system';
+    let isDark = theme === 'system' ? systemDark.matches : theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+}
+systemDark.addEventListener('change', () => { if (!themePref || themePref === 'system') applyTheme(); });
+function setTheme(theme) { localStorage.setItem('theme', theme); applyTheme(); }
+applyTheme();
+
+// ---------- DONNÉES ----------
+const STORAGE = {
+    members: 'vdc_members', events: 'vdc_events', attendances: 'vdc_attendances',
+    repertoire: 'vdc_repertoire', inventory: 'vdc_inventory', minutes: 'vdc_minutes',
+    programme: 'vdc_programme', massPrograms: 'vdc_massPrograms'
+};
+
+let AppData = {
+    members: [], events: [], attendances: [],
+    repertoire: { 'Messes': [], 'Chants Communion': [], 'Offertoires': [], 'High life': [], 'Acclamations': [] },
+    inventory: [], minutes: [], programme: [], massPrograms: []
+};
+let currentView = 'dashboard';
+let selectedEventId = null;
+let currentAttendance = {};
+let currentRepertoireTab = 'Messes';
+let currentSecretariatTab = 'attendance';
+
+function loadData() {
+    try {
+        AppData.members = JSON.parse(localStorage.getItem(STORAGE.members)) || [];
+        AppData.events = JSON.parse(localStorage.getItem(STORAGE.events)) || [];
+        AppData.attendances = JSON.parse(localStorage.getItem(STORAGE.attendances)) || [];
+        const rep = JSON.parse(localStorage.getItem(STORAGE.repertoire));
+        AppData.repertoire = rep || { 'Messes': [], 'Chants Communion': [], 'Offertoires': [], 'High life': [], 'Acclamations': [] };
+        AppData.inventory = JSON.parse(localStorage.getItem(STORAGE.inventory)) || [];
+        AppData.minutes = JSON.parse(localStorage.getItem(STORAGE.minutes)) || [];
+        AppData.programme = JSON.parse(localStorage.getItem(STORAGE.programme)) || [];
+        AppData.massPrograms = JSON.parse(localStorage.getItem(STORAGE.massPrograms)) || [];
+    } catch(e) {}
+    if (AppData.events.length > 0) selectedEventId = AppData.events[0].id;
+    initAttendanceFromStorage();
+}
+
+function saveAll() {
+    localStorage.setItem(STORAGE.members, JSON.stringify(AppData.members));
+    localStorage.setItem(STORAGE.events, JSON.stringify(AppData.events));
+    localStorage.setItem(STORAGE.attendances, JSON.stringify(AppData.attendances));
+    localStorage.setItem(STORAGE.repertoire, JSON.stringify(AppData.repertoire));
+    localStorage.setItem(STORAGE.inventory, JSON.stringify(AppData.inventory));
+    localStorage.setItem(STORAGE.minutes, JSON.stringify(AppData.minutes));
+    localStorage.setItem(STORAGE.programme, JSON.stringify(AppData.programme));
+    localStorage.setItem(STORAGE.massPrograms, JSON.stringify(AppData.massPrograms));
+}
+
+function exportAllData() {
+    const blob = new Blob([JSON.stringify(AppData, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vdc_backup.json';
+    a.click();
+}
+function importAllData(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (data.members) AppData.members = data.members;
+            if (data.events) AppData.events = data.events;
+            if (data.attendances) AppData.attendances = data.attendances;
+            if (data.repertoire) AppData.repertoire = data.repertoire;
+            if (data.inventory) AppData.inventory = data.inventory;
+            if (data.minutes) AppData.minutes = data.minutes;
+            if (data.programme) AppData.programme = data.programme;
+            if (data.massPrograms) AppData.massPrograms = data.massPrograms;
+            saveAll();
+            loadData();
+            renderView();
+            alert(_('importSuccess'));
+        } catch(ex) { alert('Fichier invalide.'); }
+    };
+    reader.readAsText(file);
+}
+function resetAllData() {
+    if (confirm(_('resetConfirm'))) {
+        Object.values(STORAGE).forEach(k => localStorage.removeItem(k));
+        localStorage.removeItem('theme');
+        location.reload();
+    }
+}
+
+function initAttendanceFromStorage() {
+    currentAttendance = {};
+    if (!selectedEventId) return;
+    AppData.attendances.filter(a => a.event_id === selectedEventId).forEach(a => {
+        currentAttendance[a.member_id] = { status: a.status, motif: a.motif || '' };
+    });
+}
+
+// ---------- NAVIGATION ----------
+function buildNavigation() {
+    const navItems = [
+        { view: 'dashboard', icon: 'fa-th-large', i18n: 'dashboard' },
+        { view: 'repertoire', icon: 'fa-book-open', i18n: 'repertoire' },
+        { view: 'secretariat', icon: 'fa-briefcase', i18n: 'secretariat' },
+        { view: 'mass', icon: 'fa-church', i18n: 'mass' },
+        { view: 'settings', icon: 'fa-cog', i18n: 'settings' },
+    ];
+    document.getElementById('sidebarNav').innerHTML = navItems.map(item =>
+        `<a href="#" onclick="navigateTo('${item.view}')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors" data-view="${item.view}"><i class="fas ${item.icon} w-5 text-center"></i> <span>${_(item.i18n)}</span></a>`
+    ).join('');
+    document.getElementById('bottomNav').innerHTML = navItems.map(item =>
+        `<button onclick="navigateTo('${item.view}')" class="flex flex-col items-center text-xs nav-item-mobile mx-1" data-view="${item.view}"><i class="fas ${item.icon} text-lg"></i> <span>${_(item.i18n)}</span></button>`
+    ).join('');
+}
+
+function navigateTo(view) {
+    currentView = view;
+    renderView();
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('bg-slate-700', 'text-yellow-400'));
+    document.querySelectorAll('.nav-item-mobile').forEach(el => el.classList.remove('text-yellow-400'));
+    const d = document.querySelector(`.nav-item[data-view="${view}"]`);
+    const m = document.querySelector(`.nav-item-mobile[data-view="${view}"]`);
+    if (d) d.classList.add('bg-slate-700', 'text-yellow-400');
+    if (m) m.classList.add('text-yellow-400');
+    if (window.innerWidth < 1024) {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.add('hidden');
+    }
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('hidden'); }
+function openSidebar() { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.remove('hidden'); }
+
+// ---------- RENDU PRINCIPAL ----------
+function renderView() {
+    const main = document.getElementById('mainContent');
+    switch (currentView) {
+        case 'dashboard': main.innerHTML = renderDashboard(); break;
+        case 'repertoire': main.innerHTML = renderRepertoire(); break;
+        case 'secretariat': main.innerHTML = renderSecretariat(); break;
+        case 'mass': main.innerHTML = renderMassPage(); break;
+        case 'settings': main.innerHTML = renderSettings(); break;
+        default: main.innerHTML = renderDashboard();
+    }
+}
+
+// ---------- DASHBOARD ----------
+function renderDashboard() {
+    const nb = AppData.members.length;
+    const nextEv = AppData.events.sort((a,b)=> new Date(a.event_date) - new Date(b.event_date)).find(e => new Date(e.event_date) >= new Date()) || AppData.events[AppData.events.length-1];
+    const totalRep = Object.values(AppData.repertoire).flat().length;
+    const today = new Date().toISOString().split('T')[0];
+    const todayProg = AppData.programme.filter(p => p.date === today);
+    return `
+    <div class="mb-6 flex items-center justify-between">
+        <h2 class="text-2xl font-bold">${_('dashboard')}</h2>
+        <button onclick="openSidebar()" class="lg:hidden text-slate-700 text-2xl"><i class="fas fa-bars"></i></button>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div class="bg-white p-5 rounded-xl shadow-sm border">
+            <div class="flex items-center gap-3 text-blue-600"><i class="fas fa-users text-2xl"></i><span>${_('choirMembers')}</span></div>
+            <p class="text-3xl font-bold mt-2">${nb}</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border">
+            <div class="flex items-center gap-3 text-yellow-600"><i class="fas fa-calendar-alt text-2xl"></i><span>${_('nextEvent')}</span></div>
+            <p class="text-xl font-bold mt-2">${nextEv?.title || _('noData')}</p>
+            <p class="text-sm text-gray-500">${nextEv?.event_date || ''} - ${nextEv?.location || ''}</p>
+        </div>
+        <div class="bg-white p-5 rounded-xl shadow-sm border">
+            <div class="flex items-center gap-3 text-green-600"><i class="fas fa-book-open text-2xl"></i><span>${_('repertoire')}</span></div>
+            <p class="text-3xl font-bold mt-2">${totalRep} ${_('repertoireCount')}</p>
+        </div>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border p-4 mb-6">
+        <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-bold"><i class="fas fa-list-ul mr-2"></i>${_('programmeToday')} (${new Date().toLocaleDateString('fr-FR')})</h3>
+            <button onclick="openAddProgrammeModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> ${_('add')}</button>
+        </div>
+        ${todayProg.length === 0 ? `<p class="text-gray-500 italic">${_('noData')}</p>` : todayProg.map(p => `
+        <div class="flex justify-between items-center border-b py-2">
+            <span><strong>${p.title}</strong> - ${p.details || ''}</span>
+            <button onclick="deleteProgramme(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button>
+        </div>`).join('')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <button onclick="navigateTo('secretariat')" class="bg-white p-4 rounded-xl shadow-sm border hover:shadow-md text-left"><i class="fas fa-user-check text-blue-500 text-xl block mb-1"></i>${_('secretariat')}</button>
+        <button onclick="navigateTo('repertoire')" class="bg-white p-4 rounded-xl shadow-sm border hover:shadow-md text-left"><i class="fas fa-music text-green-500 text-xl block mb-1"></i>${_('repertoire')}</button>
+        <button onclick="navigateTo('mass')" class="bg-white p-4 rounded-xl shadow-sm border hover:shadow-md text-left"><i class="fas fa-church text-purple-500 text-xl block mb-1"></i>${_('mass')}</button>
+        <button onclick="navigateTo('settings')" class="bg-white p-4 rounded-xl shadow-sm border hover:shadow-md text-left"><i class="fas fa-cog text-indigo-500 text-xl block mb-1"></i>${_('settings')}</button>
+    </div>`;
+}
+
+// ---------- RÉPERTOIRE ----------
+function renderRepertoire() {
+    const tabs = ['Messes', 'Chants Communion', 'Offertoires', 'High life', 'Acclamations'];
+    const tabKeys = ['repertoireTab_messes', 'repertoireTab_communion', 'repertoireTab_offertoires', 'repertoireTab_highlife', 'repertoireTab_acclamations'];
+    const chants = AppData.repertoire[currentRepertoireTab] || [];
+    const statusColors = {'A étudier':'bg-yellow-100 text-yellow-800','En cours':'bg-blue-100 text-blue-800','Maîtrisé':'bg-green-100 text-green-800','Archivé':'bg-gray-100 text-gray-600'};
+    let html = `
+    <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">${_('repertoire')}</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 text-2xl"><i class="fas fa-bars"></i></button></div>
+    <div class="flex flex-wrap gap-2 mb-6 border-b pb-2">
+        ${tabs.map((t,i) => `<button onclick="switchRepertoireTab('${t}')" class="px-4 py-2 rounded-t-lg text-sm font-medium ${currentRepertoireTab === t ? 'tab-active bg-white border-t border-l border-r border-gray-200' : 'text-gray-500 hover:text-gray-700'}">${_(tabKeys[i])}</button>`).join('')}
+    </div>
+    <div class="mb-4 flex justify-between items-center">
+        <span class="text-sm text-gray-500">${chants.length} ${_('repertoireCount')}</span>
+        <button onclick="openAddChantModal()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i> ${_('add')}</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+    chants.forEach(chant => {
+        html += `<div class="bg-white rounded-xl shadow-sm border p-4 hover:shadow-md cursor-pointer" onclick="viewChantDetail(${chant.id}, '${currentRepertoireTab}')">
+            <div class="flex justify-between"><h3 class="font-bold text-lg">${chant.title}</h3><span class="text-xs px-2 py-0.5 rounded-full ${statusColors[chant.status]}">${chant.status}</span></div>
+            <p class="text-sm text-gray-600">${chant.composer || ''}</p>
+            <div class="flex justify-end mt-2"><button onclick="event.stopPropagation();deleteChant(${chant.id}, '${currentRepertoireTab}')" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></div>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+}
+function switchRepertoireTab(tab) { currentRepertoireTab = tab; renderView(); }
+function deleteChant(chantId, tab) {
+    if (confirm(_('confirmDelete'))) {
+        AppData.repertoire[tab] = AppData.repertoire[tab].filter(c => c.id !== chantId);
+        saveAll(); renderView();
+    }
+}
+function openAddChantModal(editChant = null) {
+    const chant = editChant || { title: '', composer: '', musical_key: '', status: 'A étudier', file_url: '', lyrics: '' };
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${editChant ? _('edit') : _('add')} un chant (${currentRepertoireTab})</h2>
+    <form id="chantForm" class="space-y-3">
+        <input type="text" name="title" placeholder="${_('title')}" value="${chant.title}" required class="w-full border p-2 rounded-lg">
+        <input type="text" name="composer" placeholder="Compositeur" value="${chant.composer}" class="w-full border p-2 rounded-lg">
+        <input type="text" name="musical_key" placeholder="Tonalité" value="${chant.musical_key}" class="w-full border p-2 rounded-lg">
+        <select name="status" class="w-full border p-2 rounded-lg">
+            <option ${chant.status==='A étudier'?'selected':''}>A étudier</option>
+            <option ${chant.status==='En cours'?'selected':''}>En cours</option>
+            <option ${chant.status==='Maîtrisé'?'selected':''}>Maîtrisé</option>
+            <option ${chant.status==='Archivé'?'selected':''}>Archivé</option>
+        </select>
+        <div>
+            <label class="block text-sm font-medium mb-1">Fichier (PDF, image, audio)</label>
+            <input type="file" name="file" accept=".pdf,image/*,audio/*" class="w-full border p-2 rounded-lg">
+            ${chant.file_url ? `<p class="text-xs mt-1">Fichier actuel : <a href="${chant.file_url}" target="_blank" class="text-blue-600 underline">Voir</a></p>` : ''}
+        </div>
+        <textarea name="lyrics" placeholder="Paroles" class="w-full border p-2 rounded-lg" rows="4">${chant.lyrics}</textarea>
+        <div class="flex justify-end gap-3">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button>
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('save')}</button>
+        </div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('chantForm').onsubmit = function(e) {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const file = fd.get('file');
+        const newChant = {
+            id: editChant ? editChant.id : Date.now(),
+            title: fd.get('title'), composer: fd.get('composer'), musical_key: fd.get('musical_key'),
+            status: fd.get('status'), lyrics: fd.get('lyrics'),
+            file_url: editChant ? editChant.file_url : ''
+        };
+        if (file && file.size > 0) {
+            const reader = new FileReader();
+            reader.onload = (ev) => { newChant.file_url = ev.target.result; saveChant(newChant, editChant); };
+            reader.readAsDataURL(file);
+        } else saveChant(newChant, editChant);
+    };
+}
+function saveChant(chant, editChant) {
+    if (editChant) {
+        const idx = AppData.repertoire[currentRepertoireTab].findIndex(c => c.id === editChant.id);
+        if (idx !== -1) AppData.repertoire[currentRepertoireTab][idx] = chant;
+    } else AppData.repertoire[currentRepertoireTab].push(chant);
+    saveAll(); closeModal(); renderView();
+}
+function viewChantDetail(id, tab) {
+    const chant = AppData.repertoire[tab].find(c => c.id === id);
+    if (!chant) return;
+    const modal = `
+    <h2 class="text-xl font-bold mb-2">${chant.title}</h2>
+    <p class="text-sm text-gray-600">${chant.composer} - ${chant.musical_key} - ${chant.status}</p>
+    <div class="my-3"><strong>Paroles :</strong><p class="text-sm italic bg-gray-50 p-2 rounded">${chant.lyrics || 'Non renseignées'}</p></div>
+    ${chant.file_url ? `<a href="${chant.file_url}" target="_blank" class="text-blue-600 underline">Ouvrir le fichier</a>` : '<p class="text-gray-500">Aucun fichier</p>'}
+    <div class="mt-4 flex justify-between">
+        <button onclick="deleteChant(${chant.id}, '${tab}');closeModal();" class="text-red-600"><i class="fas fa-trash"></i> ${_('delete')}</button>
+        <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('close')}</button>
+    </div>`;
+    openModal(modal);
+}
+
+// ---------- SECRÉTARIAT ----------
+function renderSecretariat() {
+    const tabs = [
+        { id: 'attendance', label: _('attendance') },
+        { id: 'events', label: _('events') },
+        { id: 'inventory', label: _('inventory') },
+        { id: 'pv', label: _('pv') },
+        { id: 'programme', label: _('programme') }
+    ];
+    let content = '';
+    switch (currentSecretariatTab) {
+        case 'attendance': content = renderAttendance(); break;
+        case 'events': content = renderEventsPage(); break;
+        case 'inventory': content = renderInventorySection(); break;
+        case 'pv': content = renderPVSection(); break;
+        case 'programme': content = renderProgrammeContent(); break;
+    }
+    return `
+    <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">${_('secretariat')}</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 text-2xl"><i class="fas fa-bars"></i></button></div>
+    <div class="flex flex-wrap gap-2 mb-6 border-b pb-2">
+        ${tabs.map(t => `<button onclick="switchSecretariatTab('${t.id}')" class="px-4 py-2 rounded-t-lg text-sm font-medium ${currentSecretariatTab === t.id ? 'tab-active bg-white border-t border-l border-r border-gray-200' : 'text-gray-500 hover:text-gray-700'}">${t.label}</button>`).join('')}
+    </div>
+    ${content}`;
+}
+function switchSecretariatTab(tab) { currentSecretariatTab = tab; renderView(); }
+
+// --- Présence ---
+function renderAttendance() {
+    if (AppData.events.length === 0) return `<p class="text-center text-gray-500 py-10">${_('addEventFirst')}</p>`;
+    if (!selectedEventId) selectedEventId = AppData.events[0].id;
+    const sorted = [...AppData.members].sort((a,b) => a.fullName.localeCompare(b.fullName, 'fr'));
+    let html = `
+    <div class="bg-white rounded-xl shadow-sm border p-4 mb-6 flex flex-wrap gap-4 items-center">
+        <div class="flex-1 min-w-[200px]">
+            <label class="block text-sm font-medium mb-1">${_('selectEvent')}</label>
+            <select id="eventSelect" class="border rounded-lg p-2 w-full" onchange="changeEvent(this.value)">
+                ${AppData.events.map(e => `<option value="${e.id}" ${e.id === selectedEventId ? 'selected' : ''}>${e.title || e.type + ' - ' + e.event_date}</option>`).join('')}
+            </select>
+        </div>
+        <button onclick="openAddMemberModal()" class="bg-green-600 text-white px-3 py-2 rounded-lg text-sm"><i class="fas fa-user-plus mr-1"></i> ${_('addMember')}</button>
+    </div>
+    ${sorted.length === 0 ? `<p class="text-gray-500 text-center py-10">${_('noData')}</p>` : `
+    <div class="overflow-x-auto bg-white rounded-xl shadow-sm border">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-left"><tr><th class="p-3">${_('fullName')}</th><th class="p-3">${_('pupitre')}</th><th class="p-3">${_('situation')}</th><th class="p-3">${_('motif')}</th></tr></thead>
+            <tbody>
+                ${sorted.map(m => {
+                    const att = currentAttendance[m.id] || { status: 'Présent', motif: '' };
+                    return `<tr class="border-t">
+                        <td class="p-3 font-medium">${m.fullName}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded-full text-xs ${m.pupitre === 'Soprano' ? 'bg-pink-200 text-pink-800' : m.pupitre === 'Alto' ? 'bg-indigo-200 text-indigo-800' : m.pupitre === 'Ténor' ? 'bg-teal-200 text-teal-800' : 'bg-amber-200 text-amber-800'}">${m.pupitre}</span></td>
+                        <td class="p-3">
+                            <select onchange="setAttendance(${m.id}, this.value)" class="border rounded px-2 py-1 text-xs">
+                                <option value="Présent" ${att.status==='Présent'?'selected':''}>${_('present')}</option>
+                                <option value="Retard" ${att.status==='Retard'?'selected':''}>${_('retard')}</option>
+                                <option value="Absent" ${att.status==='Absent'?'selected':''}>${_('absent')}</option>
+                            </select>
+                        </td>
+                        <td class="p-3"><input type="text" value="${att.motif}" onchange="updateMotif(${m.id}, this.value)" placeholder="${_('motif')}..." class="border rounded px-2 py-1 text-xs w-full"></td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+    </div>
+    <div class="mt-4 text-right"><button onclick="saveAttendance()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"><i class="fas fa-save mr-2"></i> ${_('saveAttendance')}</button></div>`}`;
+    return html;
+}
+function changeEvent(id) { selectedEventId = parseInt(id); initAttendanceFromStorage(); renderView(); }
+function setAttendance(memberId, status) {
+    if (!currentAttendance[memberId]) currentAttendance[memberId] = { status, motif: '' };
+    else currentAttendance[memberId].status = status;
+}
+function updateMotif(memberId, motif) {
+    if (!currentAttendance[memberId]) currentAttendance[memberId] = { status: 'Présent', motif: '' };
+    currentAttendance[memberId].motif = motif;
+}
+function saveAttendance() {
+    for (let mId in currentAttendance) {
+        const existing = AppData.attendances.find(a => a.event_id === selectedEventId && a.member_id == mId);
+        if (existing) { existing.status = currentAttendance[mId].status; existing.motif = currentAttendance[mId].motif; }
+        else AppData.attendances.push({ id: Date.now()+Math.random(), event_id: selectedEventId, member_id: parseInt(mId), status: currentAttendance[mId].status, motif: currentAttendance[mId].motif });
+    }
+    saveAll(); alert(_('saveAttendance'));
+}
+function openAddMemberModal() {
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${_('addMember')}</h2>
+    <form id="memberForm" class="space-y-3">
+        <input type="text" name="fullName" placeholder="${_('fullName')}" required class="w-full border p-2 rounded-lg">
+        <select name="pupitre" required class="w-full border p-2 rounded-lg">
+            <option value="">${_('pupitre')}</option><option>Soprano</option><option>Alto</option><option>Ténor</option><option>Basse</option>
+        </select>
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('add')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('memberForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        AppData.members.push({ id: Date.now(), fullName: fd.get('fullName'), pupitre: fd.get('pupitre') });
+        saveAll(); closeModal(); renderView();
+    };
+}
+
+// --- Événements ---
+function renderEventsPage() {
+    const events = [...AppData.events].sort((a,b) => new Date(a.event_date) - new Date(b.event_date));
+    let html = `
+    <div class="mb-4 flex justify-between items-center">
+        <span class="text-gray-600">${events.length} événement(s)</span>
+        <button onclick="openAddEventModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i> ${_('add')}</button>
+    </div>
+    <div class="space-y-4">`;
+    events.forEach(ev => {
+        html += `<div class="bg-white p-4 rounded-xl shadow-sm border">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="font-bold text-lg">${ev.title || ev.type + ' - ' + ev.event_date} <span class="text-xs bg-gray-200 px-2 py-0.5 rounded-full">${ev.type || 'Autre'}</span></h3>
+                    <p class="text-sm text-gray-600">${ev.event_date} ${ev.heure ? 'à '+ev.heure : ''} - ${ev.paroisse || ''} ${ev.quartier ? '('+ev.quartier+')' : ''}</p>
+                    <p class="text-sm text-gray-500">${ev.details || ''}</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openEditEventModal(${ev.id})" class="text-blue-600"><i class="fas fa-edit"></i></button>
+                    <button onclick="deleteEvent(${ev.id})" class="text-red-500"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+}
+function openAddEventModal() { openEditEventModal(null); }
+function openEditEventModal(eventId) {
+    const ev = eventId ? AppData.events.find(e => e.id === eventId) : null;
+    const data = ev || { title: '', type: 'Messe', event_date: '', heure: '', paroisse: '', quartier: '', details: '' };
+    const isEdit = !!ev;
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${isEdit ? _('editEvent') : _('addEvent')}</h2>
+    <form id="eventForm" class="space-y-3">
+        ${isEdit ? `<input type="text" name="title" placeholder="${_('title')}" value="${data.title}" class="w-full border p-2 rounded-lg">` : ''}
+        <select name="type" class="w-full border p-2 rounded-lg">
+            <option value="Messe" ${data.type==='Messe'?'selected':''}>${_('eventType_messe')}</option>
+            <option value="Concert" ${data.type==='Concert'?'selected':''}>${_('eventType_concert')}</option>
+            <option value="Réjouissances" ${data.type==='Réjouissances'?'selected':''}>${_('eventType_rejouissances')}</option>
+            <option value="Classe de chant" ${data.type==='Classe de chant'?'selected':''}>${_('eventType_classe')}</option>
+            <option value="Autre" ${data.type==='Autre'?'selected':''}>${_('eventType_autre')}</option>
+        </select>
+        <div class="grid grid-cols-2 gap-2">
+            <input type="date" name="event_date" value="${data.event_date}" required class="w-full border p-2 rounded-lg">
+            <input type="time" name="heure" value="${data.heure}" class="w-full border p-2 rounded-lg">
+        </div>
+        <input type="text" name="paroisse" placeholder="${_('paroisse')}" value="${data.paroisse || ''}" class="w-full border p-2 rounded-lg">
+        <input type="text" name="quartier" placeholder="${_('quartier')}" value="${data.quartier || ''}" class="w-full border p-2 rounded-lg">
+        <textarea name="details" placeholder="${_('details')}" class="w-full border p-2 rounded-lg" rows="3">${data.details || ''}</textarea>
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('save')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('eventForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const newEv = {
+            id: ev ? ev.id : Date.now(),
+            title: isEdit ? fd.get('title') : `${fd.get('type')} du ${fd.get('event_date')}`,
+            type: fd.get('type'), event_date: fd.get('event_date'), heure: fd.get('heure'),
+            paroisse: fd.get('paroisse'), quartier: fd.get('quartier'), details: fd.get('details')
+        };
+        if (ev) { const idx = AppData.events.findIndex(e => e.id === ev.id); if (idx !== -1) AppData.events[idx] = newEv; }
+        else AppData.events.push(newEv);
+        if (!selectedEventId) selectedEventId = newEv.id;
+        saveAll(); closeModal(); renderView();
+    };
+}
+function deleteEvent(id) {
+    if (confirm(_('confirm'))) {
+        AppData.events = AppData.events.filter(e => e.id !== id);
+        AppData.attendances = AppData.attendances.filter(a => a.event_id !== id);
+        if (selectedEventId === id) selectedEventId = AppData.events.length > 0 ? AppData.events[0].id : null;
+        saveAll(); initAttendanceFromStorage(); renderView();
+    }
+}
+
+// --- Inventaire ---
+function renderInventorySection() {
+    return `
+    <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">${_('inventory')}</h3><button onclick="openAddInventoryModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> ${_('add')}</button></div>
+    <div class="space-y-3">${AppData.inventory.map(item => `<div class="bg-white p-3 rounded-lg shadow-sm border"><p class="font-medium">${item.domaine ? item.domaine + ' - ' : ''}${item.name} (x${item.qty}) - <span class="text-xs">${item.condition}</span></p></div>`).join('') || `<p class="text-gray-500">${_('noData')}</p>`}</div>`;
+}
+function openAddInventoryModal() {
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${_('addInventory')}</h2>
+    <form id="invForm" class="space-y-3">
+        <input type="text" name="domaine" placeholder="${_('domaine')}" class="w-full border p-2 rounded-lg">
+        <input type="text" name="name" placeholder="${_('name')}" required class="w-full border p-2 rounded-lg">
+        <input type="number" name="qty" placeholder="${_('quantity')}" value="1" class="w-full border p-2 rounded-lg">
+        <select name="condition" class="w-full border p-2 rounded-lg">
+            <option>${_('new')}</option><option>${_('good')}</option><option>${_('damaged')}</option><option>${_('toReplace')}</option><option>${_('toRepair')}</option>
+        </select>
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('add')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('invForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        AppData.inventory.push({ id: Date.now(), domaine: fd.get('domaine'), name: fd.get('name'), qty: fd.get('qty'), condition: fd.get('condition') });
+        saveAll(); closeModal(); renderView();
+    };
+}
+
+// --- PV ---
+function renderPVSection() {
+    return `
+    <div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">${_('pv')}</h3><button onclick="openAddPVModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> ${_('add')}</button></div>
+    <div class="space-y-3">${AppData.minutes.map(pv => `<div class="bg-white p-3 rounded-lg shadow-sm border"><p class="font-medium">${pv.title} <span class="text-sm text-gray-500">${pv.date}</span></p></div>`).join('') || `<p class="text-gray-500">${_('noData')}</p>`}</div>`;
+}
+function openAddPVModal() {
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${_('addPV')}</h2>
+    <form id="pvForm" class="space-y-3">
+        <input type="text" name="title" placeholder="${_('title')}" required class="w-full border p-2 rounded-lg">
+        <input type="date" name="date" required class="w-full border p-2 rounded-lg">
+        <textarea name="content" placeholder="Contenu" class="w-full border p-2 rounded-lg" rows="5"></textarea>
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('save')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('pvForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        AppData.minutes.push({ id: Date.now(), title: fd.get('title'), date: fd.get('date'), content: fd.get('content') });
+        saveAll(); closeModal(); renderView();
+    };
+}
+
+// --- Programme ---
+function renderProgrammeContent() {
+    const programmes = [...AppData.programme].sort((a,b) => new Date(a.date) - new Date(b.date));
+    return `
+    <div class="mb-4 flex justify-between items-center">
+        <span class="text-gray-600">${programmes.length} programme(s)</span>
+        <button onclick="openAddProgrammeModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i> ${_('add')}</button>
+    </div>
+    <div class="space-y-4">
+        ${programmes.length === 0 ? `<p class="text-gray-500 italic">${_('noData')}</p>` : programmes.map(p => `
+        <div class="bg-white p-4 rounded-xl shadow-sm border">
+            <div class="flex justify-between items-start">
+                <div><h3 class="font-bold text-lg">${p.title}</h3><p class="text-sm text-gray-500">${p.date} - ${p.details || _('noData')}</p></div>
+                <div class="flex gap-2">
+                    <button onclick="openAddProgrammeModal(${JSON.stringify(p).replace(/"/g, '&quot;')})" class="text-blue-600"><i class="fas fa-edit"></i></button>
+                    <button onclick="deleteProgramme(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        </div>`).join('')}
+    </div>`;
+}
+function openAddProgrammeModal(editProg = null) {
+    const prog = editProg || { title: '', details: '', date: new Date().toISOString().split('T')[0] };
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${editProg ? _('editProgramme') : _('addProgramme')}</h2>
+    <form id="progForm" class="space-y-3">
+        <input type="text" name="title" placeholder="${_('title')}" value="${prog.title}" required class="w-full border p-2 rounded-lg">
+        <textarea name="details" placeholder="${_('details')}" class="w-full border p-2 rounded-lg" rows="3">${prog.details || ''}</textarea>
+        <input type="date" name="date" value="${prog.date}" required class="w-full border p-2 rounded-lg">
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('save')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('progForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const data = { id: editProg ? editProg.id : Date.now(), title: fd.get('title'), details: fd.get('details'), date: fd.get('date') };
+        if (editProg) { const idx = AppData.programme.findIndex(p => p.id === editProg.id); if (idx !== -1) AppData.programme[idx] = data; }
+        else AppData.programme.push(data);
+        saveAll(); closeModal(); renderView();
+    };
+}
+function deleteProgramme(id) {
+    if (confirm(_('confirm'))) { AppData.programme = AppData.programme.filter(p => p.id !== id); saveAll(); renderView(); }
+}
+
+// ---------- MESSE ----------
+function renderMassPage() {
+    const programs = [...AppData.massPrograms].sort((a,b) => new Date(b.date) - new Date(a.date));
+    let html = `
+    <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">${_('mass')}</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 text-2xl"><i class="fas fa-bars"></i></button></div>
+    <div class="mb-4 flex justify-between items-center">
+        <span class="text-gray-600">${programs.length} programme(s)</span>
+        <button onclick="openAddMassProgramModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i> ${_('addMass')}</button>
+    </div>
+    <div class="space-y-4">`;
+    programs.forEach(p => {
+        html += `<div class="bg-white p-4 rounded-xl shadow-sm border">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="font-bold text-lg">Messe du ${p.date} ${p.title ? '- ' + p.title : ''}</h3>
+                    <p class="text-sm text-gray-600 truncate">${_('massProcession')}: ${p.procession || '-'} | ${_('massCommunion')}: ${p.communion || '-'}</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openEditMassProgramModal(${p.id})" class="text-blue-600"><i class="fas fa-edit"></i></button>
+                    <button onclick="deleteMassProgram(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += `</div>`;
+    return html;
+}
+function openAddMassProgramModal() { openEditMassProgramModal(null); }
+function openEditMassProgramModal(progId) {
+    const prog = progId ? AppData.massPrograms.find(p => p.id === progId) : null;
+    const data = prog || { date: new Date().toISOString().split('T')[0], title: '', procession: '', entree: '', kyrie: '', gloria: '', psaume: '', acclamation: '', epiclese: '', credo: '', pu: '', offrande: '', sanctus: '', agnus_dei: '', communion: '', quete_construction: '', envoi: '' };
+    const fields = [
+        ['massProcession','procession'], ['massEntree','entree'], ['massKyrie','kyrie'], ['massGloria','gloria'], ['massPsaume','psaume'],
+        ['massAcclamation','acclamation'], ['massEpiclese','epiclese'], ['massCredo','credo'], ['massPU','pu'],
+        ['massOffrande','offrande'], ['massSanctus','sanctus'], ['massAgnusDei','agnus_dei'], ['massCommunion','communion'],
+        ['massQuete','quete_construction'], ['massEnvoi','envoi']
+    ];
+    const modal = `
+    <h2 class="text-xl font-bold mb-4">${prog ? _('editMass') : _('addMass')}</h2>
+    <form id="massForm" class="space-y-3">
+        <div class="grid grid-cols-2 gap-2">
+            <input type="date" name="date" value="${data.date}" required class="w-full border p-2 rounded-lg">
+            <input type="text" name="title" placeholder="${_('title')}" value="${data.title}" class="w-full border p-2 rounded-lg">
+        </div>
+        <div class="space-y-2 text-sm">
+            ${fields.map(([labelKey, name]) => `<div><label class="block font-medium text-gray-700">🔥 ${_(labelKey)}</label><input type="text" name="${name}" value="${data[name] || ''}" class="w-full border p-2 rounded-lg mt-1" placeholder="${_(labelKey)}..."></div>`).join('')}
+        </div>
+        <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 rounded-lg">${_('cancel')}</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg">${_('save')}</button></div>
+    </form>`;
+    openModal(modal);
+    document.getElementById('massForm').onsubmit = (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const newProg = { id: prog ? prog.id : Date.now(), date: fd.get('date'), title: fd.get('title') };
+        fields.forEach(([_, name]) => newProg[name] = fd.get(name));
+        if (prog) { const idx = AppData.massPrograms.findIndex(p => p.id === prog.id); if (idx !== -1) AppData.massPrograms[idx] = newProg; }
+        else AppData.massPrograms.push(newProg);
+        saveAll(); closeModal(); renderView();
+    };
+}
+function deleteMassProgram(id) {
+    if (confirm(_('confirm'))) { AppData.massPrograms = AppData.massPrograms.filter(p => p.id !== id); saveAll(); renderView(); }
+}
+
+// ---------- PARAMÈTRES ----------
+function renderSettings() {
+    return `
+    <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">${_('settings')}</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 text-2xl"><i class="fas fa-bars"></i></button></div>
+    <div class="bg-white rounded-xl shadow-sm border p-6 space-y-6 max-w-md">
+        <div>
+            <label class="block font-medium mb-2">${_('darkMode')}</label>
+            <select id="themeSelect" onchange="setTheme(this.value)" class="border rounded p-2 w-full">
+                <option value="system" ${(!themePref || themePref==='system')?'selected':''}>${_('themeSystem')}</option>
+                <option value="light" ${themePref==='light'?'selected':''}>${_('themeLight')}</option>
+                <option value="dark" ${themePref==='dark'?'selected':''}>${_('themeDark')}</option>
+            </select>
+        </div>
+        <button onclick="exportAllData()" class="w-full bg-blue-600 text-white py-2 rounded mb-2"><i class="fas fa-download mr-2"></i>${_('exportData')}</button>
+        <label class="w-full bg-gray-200 py-2 rounded cursor-pointer block text-center"><i class="fas fa-upload mr-2"></i>${_('importData')}<input type="file" accept=".json" onchange="importAllData(this.files[0])" class="hidden"></label>
+        <button onclick="resetAllData()" class="w-full bg-red-600 text-white py-2 rounded"><i class="fas fa-trash-alt mr-2"></i>${_('resetData')}</button>
+    </div>`;
+}
+
+// ---------- MODAL ----------
+function openModal(content) { document.getElementById('modalContent').innerHTML = content; document.getElementById('modal').classList.remove('hidden'); document.getElementById('modal').classList.add('flex'); }
+function closeModal() { document.getElementById('modal').classList.add('hidden'); document.getElementById('modal').classList.remove('flex'); }
+document.getElementById('modal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
+// ---------- INITIALISATION ----------
+function initApp() {
+    loadData();
+    buildNavigation();
+    navigateTo('dashboard');
+}
+window.addEventListener('resize', () => {
+    if (window.innerWidth >= 1024) {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.add('hidden');
+    }
+});
+initApp();
+</script>
+</body>
+</html>
