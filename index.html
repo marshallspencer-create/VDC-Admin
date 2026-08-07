@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VDC Admin</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial; background: #1e293b; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #334155; padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: white; font-size: 16px; box-sizing: border-box; }
+        button { background: #3b82f6; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #2563eb; }
+        .link { color: #93c5fd; cursor: pointer; text-align: center; display: block; margin-top: 10px; }
+        .hidden { display: none; }
+        h2 { text-align: center; color: #fbbf24; }
+    </style>
+</head>
+<body>
+
+<!-- ÉCRAN DE CONNEXION -->
+<div id="loginScreen">
+    <div class="container">
+        <h2>🔐 VDC Admin</h2>
+        <input type="email" id="loginEmail" placeholder="Email">
+        <input type="password" id="loginPassword" placeholder="Mot de passe">
+        <button id="btnLogin">Se connecter</button>
+        <span class="link" id="linkRegister">Créer un compte</span>
+    </div>
+</div>
+
+<!-- ÉCRAN D'INSCRIPTION -->
+<div id="registerScreen" class="hidden">
+    <div class="container">
+        <h2>📝 Inscription</h2>
+        <input type="text" id="regName" placeholder="Nom et Prénom">
+        <select id="regPoste">
+            <option value="">Choisir le poste</option>
+            <option>Maître de chœur</option>
+            <option>Membre du bureau</option>
+        </select>
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="password" id="regPassword" placeholder="Mot de passe (6+ caractères)">
+        <button id="btnRegister">S'inscrire</button>
+        <span class="link" id="linkLogin">Déjà un compte ? Se connecter</span>
+    </div>
+</div>
+
+<!-- ÉCRAN APRÈS CONNEXION -->
+<div id="appScreen" class="hidden">
+    <div class="container">
+        <h2>✅ Connecté !</h2>
+        <p>Bienvenue sur VDC Admin</p>
+        <button id="btnLogout">Déconnexion</button>
+    </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://tcyigckknvytckizymii.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjeWlnY2trbnZ5dGNraXp5bWlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwNTYxMjYsImV4cCI6MjEwMTYzMjEyNn0.9nUkUOUeQgzsacH6bBIRY3Q6G23XaqkS3qqmdQK6IJ8';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Éléments du DOM
+const loginScreen = document.getElementById('loginScreen');
+const registerScreen = document.getElementById('registerScreen');
+const appScreen = document.getElementById('appScreen');
+
+// Boutons et liens
+document.getElementById('btnLogin').addEventListener('click', login);
+document.getElementById('btnRegister').addEventListener('click', register);
+document.getElementById('btnLogout').addEventListener('click', logout);
+document.getElementById('linkRegister').addEventListener('click', () => {
+    loginScreen.classList.add('hidden');
+    registerScreen.classList.remove('hidden');
+});
+document.getElementById('linkLogin').addEventListener('click', () => {
+    registerScreen.classList.add('hidden');
+    loginScreen.classList.remove('hidden');
+});
+
+async function login() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) { alert('Remplis tous les champs'); return; }
+    
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { alert('Erreur : ' + error.message); return; }
+    
+    loginScreen.classList.add('hidden');
+    registerScreen.classList.add('hidden');
+    appScreen.classList.remove('hidden');
+}
+
+async function register() {
+    const name = document.getElementById('regName').value;
+    const poste = document.getElementById('regPoste').value;
+    const email = document.getElementById('regEmail').value;
+    const password = document.getElementById('regPassword').value;
+    
+    if (!name || !poste || !email || !password) { alert('Remplis tous les champs'); return; }
+    if (password.length < 6) { alert('Mot de passe : 6 caractères minimum'); return; }
+    
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) { alert('Erreur : ' + error.message); return; }
+    
+    // Enregistrer le profil
+    await supabase.from('profiles').upsert({
+        id: data.user.id,
+        full_name: name,
+        poste: poste,
+        email: email
+    });
+    
+    alert('✅ Compte créé ! Connecte-toi maintenant.');
+    registerScreen.classList.add('hidden');
+    loginScreen.classList.remove('hidden');
+}
+
+async function logout() {
+    await supabase.auth.signOut();
+    appScreen.classList.add('hidden');
+    loginScreen.classList.remove('hidden');
+}
+
+// Vérifier si déjà connecté au chargement
+(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        loginScreen.classList.add('hidden');
+        registerScreen.classList.add('hidden');
+        appScreen.classList.remove('hidden');
+    }
+})();
+</script>
+</body>
+</html>
