@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+  <title>VDC Admin</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VDC Admin">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="apple-touch-icon" href="logo.svg">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    :root { --bg: #f8fafc; --text: #1e293b; }
+    html.dark { --bg: #1e293b; --text: #e2e8f0; }
+    body { background-color: var(--bg); color: var(--text); margin:0; font-family: system-ui, sans-serif; }
+    .sidebar { transition: transform 0.3s ease; }
+    @media (max-width: 1023px) {
+      .sidebar { transform: translateX(-100%); position: fixed; z-index: 50; height: 100%; }
+      .sidebar.open { transform: translateX(0); }
+    }
+    .modal { transition: opacity 0.2s ease; }
+    .bottom-nav { background-color: #1e293b; }
+    .tab-active { border-bottom: 2px solid #3b82f6; color: #1e40af; font-weight: 600; }
+    html.dark .tab-active { color: #93c5fd; border-color: #60a5fa; }
+    html.dark .bg-white { background-color: #334155; }
+    html.dark .text-gray-800, html.dark .text-slate-800 { color: #e2e8f0; }
+    html.dark .text-gray-600 { color: #cbd5e1; }
+    html.dark .text-gray-500 { color: #94a3b8; }
+    html.dark .border { border-color: #475569; }
+    html.dark .bg-gray-50 { background-color: #1e293b; }
+    html.dark .bg-slate-800 { background-color: #0f172a; }
+  </style>
+</head>
+<body class="font-sans antialiased" id="appBody">
+
+<div id="sidebarOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onclick="toggleSidebar()"></div>
+
+<aside id="sidebar" class="sidebar fixed top-0 left-0 h-full w-64 bg-slate-800 text-white flex flex-col shadow-xl z-50 lg:translate-x-0 lg:static lg:z-auto transform -translate-x-full">
+  <div class="p-5 border-b border-slate-700">
+    <h1 class="text-xl font-bold text-yellow-400 flex items-center gap-2"><i class="fas fa-crown"></i> VDC Admin</h1>
+    <p class="text-xs text-slate-400 mt-1">Secrétariat & Maîtres de Chœur</p>
+  </div>
+  <nav class="flex-1 p-4 space-y-2" id="sidebarNav"></nav>
+  <div class="p-4 border-t border-slate-700 text-xs text-slate-400">© 2025 · VDC Admin</div>
+</aside>
+
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 z-50 lg:hidden flex justify-around items-center py-2 border-t border-slate-700 text-white shadow-lg overflow-x-auto" id="bottomNav"></nav>
+
+<main id="mainContent" class="lg:ml-64 min-h-screen pb-24 lg:pb-8 px-4 md:px-8 py-6 transition-all duration-300"></main>
+
+<div id="modal" class="modal fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-60 p-4">
+  <div class="bg-white dark:bg-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="p-6" id="modalContent"></div>
+  </div>
+</div>
+
+<div id="notificationToast" class="fixed top-4 right-4 z-[100] max-w-sm bg-white dark:bg-slate-700 rounded-xl shadow-lg p-4 transform translate-x-[120%] transition-transform duration-300 hidden">
+  <div class="flex items-center gap-3">
+    <i class="fas fa-bell text-yellow-500 text-xl"></i>
+    <div><p class="font-medium text-sm" id="toastTitle">Notification</p><p class="text-xs text-gray-500" id="toastMessage">Détails</p></div>
+  </div>
+</div>
+
+<script>
+// ---------- DONNÉES ----------
+const STORAGE_KEY = 'vdc_app_data';
+let AppData = {
+  members: [], events: [], attendances: [],
+  repertoire: { 'Messes': [], 'Chants Communion': [], 'Offertoires': [], 'High life': [], 'Acclamations': [] },
+  inventory: [], minutes: [], programme: [], massPrograms: []
+};
+let currentView = 'dashboard';
+let selectedEventId = null;
+let currentAttendance = {};
+let currentRepertoireTab = 'Messes';
+let currentSecretariatTab = 'attendance';
+
+// ---------- NOTIFICATIONS ----------
+const supportsNotifications = 'Notification' in window;
+let notificationsEnabled = supportsNotifications && localStorage.getItem('notifications') === 'true';
+
+function requestNotificationPermission() {
+  if (!supportsNotifications) { alert('Notifications non supportées.'); return; }
+  Notification.requestPermission().then(perm => {
+    notificationsEnabled = perm === 'granted';
+    localStorage.setItem('notifications', perm);
+    showToast(notificationsEnabled ? 'Notifications activées' : 'Notifications désactivées');
+  });
+}
+function sendNotification(title, message) {
+  if (notificationsEnabled && Notification.permission === 'granted') {
+    new Notification(title, { body: message, icon: 'logo.svg' });
+  }
+  showToast(title, message);
+}
+function showToast(title, message) {
+  const toast = document.getElementById('notificationToast');
+  document.getElementById('toastTitle').textContent = title;
+  document.getElementById('toastMessage').textContent = message;
+  toast.classList.remove('hidden', 'translate-x-[120%]');
+  toast.classList.add('translate-x-0');
+  setTimeout(() => { toast.classList.add('translate-x-[120%]'); setTimeout(() => toast.classList.add('hidden'), 300); }, 4000);
+}
+function notifyChange(type, action, detail = '') {
+  const t = { chant:'Chant', membre:'Choriste', événement:'Événement', présence:'Présence', programme:'Programme', messe:'Messe', matériel:'Matériel', pv:'PV' };
+  const a = { ajout:'ajouté(e)', modification:'modifié(e)', suppression:'supprimé(e)' };
+  sendNotification(` ${t[type]||'Donnée'} ${a[action]||'mise à jour'}`, detail);
+}
+function scheduleReminders() {
+  if (!notificationsEnabled || !supportsNotifications) return;
+  const today = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now()+86400000).toISOString().split('T')[0];
+  AppData.events.filter(e=>e.event_date===today).forEach(e=> sendNotification(' Aujourd\'hui', `${e.title||e.type} - ${e.heure||''}`));
+  AppData.events.filter(e=>e.event_date===tomorrow).forEach(e=> sendNotification(' Demain', `${e.title||e.type} - ${e.heure||''}`));
+  const prog = AppData.programme.filter(p=>p.date===today);
+  if (prog.length) sendNotification(' Programme du jour', prog.map(p=>p.title).join(', '));
+}
+
+// ---------- STOCKAGE ----------
+function loadData() {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if (s) AppData = JSON.parse(s);
+  } catch(e) {}
+  if (AppData.events.length) selectedEventId = AppData.events[0].id;
+  initAttendanceFromStorage();
+}
+function saveAll() { localStorage.setItem(STORAGE_KEY, JSON.stringify(AppData)); }
+function exportAllData() {
+  const blob = new Blob([JSON.stringify(AppData,null,2)],{type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'vdc_backup.json'; a.click();
+  sendNotification(' Export', 'Données exportées.');
+}
+function importAllData(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      AppData = { ...AppData, ...data };
+      saveAll(); loadData(); renderView();
+      sendNotification(' Import', 'Données importées.');
+    } catch(ex) { alert('Fichier invalide.'); }
+  };
+  reader.readAsText(file);
+}
+function resetAllData() {
+  if (confirm('Effacer toutes les données ? Irréversible.')) {
+    localStorage.removeItem(STORAGE_KEY); location.reload();
+  }
+}
+function initAttendanceFromStorage() {
+  currentAttendance = {};
+  if (!selectedEventId) return;
+  AppData.attendances.filter(a=>a.event_id===selectedEventId).forEach(a=> currentAttendance[a.member_id]={status:a.status, motif:a.motif||''});
+}
+
+// ---------- THEME ----------
+const themePref = localStorage.getItem('theme');
+const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+  let t = themePref || 'system';
+  document.documentElement.classList.toggle('dark', t==='dark'||(t==='system'&&systemDark.matches));
+}
+systemDark.addEventListener('change', ()=>{ if(!themePref||themePref==='system') applyTheme(); });
+function setTheme(t) { localStorage.setItem('theme',t); applyTheme(); }
+applyTheme();
+
+// ---------- GESTION BOUTON RETOUR (double appui pour quitter, simple retour -> dashboard) ----------
+let exitTimer = null;
+function pushAppState() {
+  if (window.history.state && window.history.state.appBack) return;
+  window.history.pushState({appBack: true}, '');
+}
+function handleBackNavigation() {
+  // Si on n'est pas sur le tableau de bord, on y retourne
+  if (currentView !== 'dashboard') {
+    navigateTo('dashboard');
+    pushAppState();
+    return;
+  }
+  // Sur le dashboard : double appui pour quitter
+  if (exitTimer) {
+    window.history.go(-2); // quitte l'application (ou ferme l'onglet)
+    exitTimer = null;
+  } else {
+    showToast('VDC Admin', 'Appuyez à nouveau pour quitter');
+    exitTimer = setTimeout(() => { exitTimer = null; }, 2000);
+    pushAppState();
+  }
+}
+window.addEventListener('popstate', (event) => {
+  if (event.state && event.state.appBack) {
+    handleBackNavigation();
+  }
+});
+
+// ---------- NAVIGATION ----------
+function buildNavigation() {
+  const items = [
+    {view:'dashboard',icon:'fa-th-large',label:'Tableau de bord'},
+    {view:'repertoire',icon:'fa-book-open',label:'Répertoire'},
+    {view:'secretariat',icon:'fa-briefcase',label:'Secrétariat'},
+    {view:'mass',icon:'fa-church',label:'Messe'},
+    {view:'settings',icon:'fa-cog',label:'Paramètres'}
+  ];
+  document.getElementById('sidebarNav').innerHTML = items.map(i=>
+    `<a href="#" onclick="navigateTo('${i.view}')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors"><i class="fas ${i.icon} w-5 text-center"></i> ${i.label}</a>`).join('');
+  document.getElementById('bottomNav').innerHTML = items.map(i=>
+    `<button onclick="navigateTo('${i.view}')" class="flex flex-col items-center text-xs mx-1"><i class="fas ${i.icon} text-lg"></i> ${i.label}</button>`).join('');
+}
+function navigateTo(view) {
+  currentView = view;
+  pushAppState();
+  renderView();
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('bg-slate-700','text-yellow-400'));
+  const t = document.querySelector(`.nav-item[onclick*="${view}"]`);
+  if(t) t.classList.add('bg-slate-700','text-yellow-400');
+}
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('hidden'); }
+function openSidebar() { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.remove('hidden'); }
+
+// ---------- RENDU PRINCIPAL ----------
+function renderView() {
+  const main = document.getElementById('mainContent');
+  switch (currentView) {
+    case 'dashboard': main.innerHTML = renderDashboard(); break;
+    case 'repertoire': main.innerHTML = renderRepertoire(); break;
+    case 'secretariat': main.innerHTML = renderSecretariat(); break;
+    case 'mass': main.innerHTML = renderMassPage(); break;
+    case 'settings': main.innerHTML = renderSettings(); break;
+    default: main.innerHTML = renderDashboard();
+  }
+}
+
+// ---------- TABLEAU DE BORD ----------
+function renderDashboard() {
+  const nb = AppData.members.length;
+  const rep = Object.values(AppData.repertoire).flat().length;
+  const next = AppData.events.sort((a,b)=>new Date(a.event_date)-new Date(b.event_date)).find(e=>new Date(e.event_date)>=new Date())||{};
+  const today = new Date().toISOString().split('T')[0];
+  const prog = AppData.programme.filter(p=>p.date===today);
+  return `
+  <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">Tableau de bord</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button></div>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-blue-600"><i class="fas fa-users text-2xl"></i><span>Choristes</span></div><p class="text-3xl font-bold mt-2">${nb}</p></div>
+    <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-yellow-600"><i class="fas fa-calendar-alt text-2xl"></i><span>Événement</span></div><p class="text-xl font-bold mt-2">${next.title||'Aucun'}</p><p class="text-sm text-gray-500">${next.event_date||''} - ${next.location||''}</p></div>
+    <div class="bg-white dark:bg-slate-700 p-5 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex items-center gap-3 text-green-600"><i class="fas fa-book-open text-2xl"></i><span>Répertoire</span></div><p class="text-3xl font-bold mt-2">${rep} chants</p></div>
+  </div>
+  <div class="bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600 p-4 mb-6">
+    <div class="flex justify-between items-center mb-3"><h3 class="text-lg font-bold"><i class="fas fa-list-ul mr-2"></i>Programme du jour (${new Date().toLocaleDateString('fr-FR')})</h3><button onclick="openAddProgrammeModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> Ajouter</button></div>
+    ${prog.length? prog.map(p=>`<div class="flex justify-between items-center border-b dark:border-slate-500 py-2"><span><strong>${p.title}</strong> - ${p.details||''}</span><button onclick="deleteProgramme(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button></div>`).join('') : '<p class="text-gray-500 italic">Aucun programme</p>'}
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <button onclick="navigateTo('secretariat')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-user-check text-blue-500 text-xl block mb-1"></i>Secrétariat</button>
+    <button onclick="navigateTo('repertoire')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-music text-green-500 text-xl block mb-1"></i>Répertoire</button>
+    <button onclick="navigateTo('mass')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-church text-purple-500 text-xl block mb-1"></i>Messe</button>
+    <button onclick="navigateTo('settings')" class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600 hover:shadow-md text-left"><i class="fas fa-cog text-indigo-500 text-xl block mb-1"></i>Paramètres</button>
+  </div>`;
+}
+
+// ---------- RÉPERTOIRE ----------
+function renderRepertoire() {
+  const tabs = ['Messes','Chants Communion','Offertoires','High life','Acclamations'];
+  const chants = AppData.repertoire[currentRepertoireTab]||[];
+  const colors = {'A étudier':'bg-yellow-100 text-yellow-800','En cours':'bg-blue-100 text-blue-800','Maîtrisé':'bg-green-100 text-green-800','Archivé':'bg-gray-100 text-gray-600'};
+  let h = `<div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">Répertoire</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button></div>
+  <div class="flex flex-wrap gap-2 mb-6 border-b dark:border-slate-600 pb-2">${tabs.map(t=>`<button onclick="currentRepertoireTab='${t}';renderView()" class="px-4 py-2 rounded-t-lg text-sm font-medium ${currentRepertoireTab===t?'tab-active bg-white dark:bg-slate-700 border-t border-l border-r dark:border-slate-600':'text-gray-500 hover:text-gray-700'}">${t}</button>`).join('')}</div>
+  <div class="mb-4 flex justify-between items-center"><span class="text-sm text-gray-500">${chants.length} chant(s)</span><button onclick="openAddChantModal()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i> Ajouter</button></div>
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+  chants.forEach(c=>{
+    h += `<div class="bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600 p-4 hover:shadow-md cursor-pointer" onclick="viewChantDetail(${c.id},'${currentRepertoireTab}')">
+      <div class="flex justify-between"><h3 class="font-bold text-lg">${c.title}</h3><span class="text-xs px-2 py-0.5 rounded-full ${colors[c.status]||'bg-gray-200'}">${c.status}</span></div>
+      <p class="text-sm text-gray-600 dark:text-gray-400">${c.composer||''}</p>
+      <div class="flex justify-end mt-2"><button onclick="event.stopPropagation();deleteChant(${c.id},'${currentRepertoireTab}')" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button></div>
+    </div>`;
+  });
+  return h + '</div>';
+}
+function deleteChant(id,tab) {
+  if(confirm('Supprimer ce chant ?')) {
+    const chant = AppData.repertoire[tab].find(c=>c.id===id);
+    AppData.repertoire[tab] = AppData.repertoire[tab].filter(c=>c.id!==id);
+    saveAll(); renderView();
+    notifyChange('chant','suppression',chant?.title||'');
+  }
+}
+function openAddChantModal(edit=null) {
+  const c = edit||{title:'',composer:'',status:'A étudier',lyrics:''};
+  const m = `
+  <h2 class="text-xl font-bold mb-4">${edit?'Modifier':'Ajouter'} un chant</h2>
+  <form id="chantForm" class="space-y-3">
+    <input type="text" name="title" placeholder="Titre" value="${c.title}" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <input type="text" name="composer" placeholder="Compositeur" value="${c.composer}" class="w-full border p-2 rounded dark:bg-slate-600">
+    <select name="status" class="w-full border p-2 rounded dark:bg-slate-600">
+      <option ${c.status==='A étudier'?'selected':''}>A étudier</option>
+      <option ${c.status==='En cours'?'selected':''}>En cours</option>
+      <option ${c.status==='Maîtrisé'?'selected':''}>Maîtrisé</option>
+      <option ${c.status==='Archivé'?'selected':''}>Archivé</option>
+    </select>
+    <textarea name="lyrics" placeholder="Paroles" class="w-full border p-2 rounded dark:bg-slate-600" rows="3">${c.lyrics}</textarea>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Enregistrer</button></div>
+  </form>`;
+  openModal(m);
+  document.getElementById('chantForm').onsubmit = e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const chant = {id:edit?edit.id:Date.now(),title:fd.get('title'),composer:fd.get('composer'),status:fd.get('status'),lyrics:fd.get('lyrics')};
+    if(edit){ const idx = AppData.repertoire[currentRepertoireTab].findIndex(c=>c.id===edit.id); if(idx!==-1) AppData.repertoire[currentRepertoireTab][idx] = chant; }
+    else AppData.repertoire[currentRepertoireTab].push(chant);
+    saveAll(); closeModal(); renderView();
+    notifyChange('chant',edit?'modification':'ajout',chant.title);
+  };
+}
+function viewChantDetail(id,tab) {
+  const c = AppData.repertoire[tab].find(c=>c.id===id); if(!c) return;
+  const m = `
+  <h2 class="text-xl font-bold mb-2">${c.title}</h2>
+  <p class="text-sm text-gray-600 dark:text-gray-400">${c.composer} - ${c.status}</p>
+  <div class="my-3"><strong>Paroles :</strong><p class="text-sm italic bg-gray-50 dark:bg-slate-600 p-2 rounded">${c.lyrics||'Non renseignées'}</p></div>
+  <div class="mt-4 flex justify-between"><button onclick="deleteChant(${c.id},'${tab}');closeModal();" class="text-red-600"><i class="fas fa-trash"></i> Supprimer</button><button onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Fermer</button></div>`;
+  openModal(m);
+}
+
+// ---------- SECRÉTARIAT ----------
+function renderSecretariat() {
+  const tabs = [
+    {id:'attendance',label:'Liste de présence'},{id:'events',label:'Événements'},
+    {id:'inventory',label:'Inventaire'},{id:'pv',label:'PV'},{id:'programme',label:'Programme'}
+  ];
+  let content = '';
+  switch(currentSecretariatTab) {
+    case 'attendance': content = renderAttendance(); break;
+    case 'events': content = renderEventsPage(); break;
+    case 'inventory': content = renderInventorySection(); break;
+    case 'pv': content = renderPVSection(); break;
+    case 'programme': content = renderProgrammeContent(); break;
+  }
+  return `
+  <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">Secrétariat</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button></div>
+  <div class="flex flex-wrap gap-2 mb-6 border-b dark:border-slate-600 pb-2">${tabs.map(t=>`<button onclick="currentSecretariatTab='${t.id}';renderView()" class="px-4 py-2 rounded-t-lg text-sm font-medium ${currentSecretariatTab===t.id?'tab-active bg-white dark:bg-slate-700 border-t border-l border-r dark:border-slate-600':'text-gray-500 hover:text-gray-700'}">${t.label}</button>`).join('')}</div>
+  ${content}`;
+}
+
+function renderAttendance() {
+  if(!AppData.events.length) return '<p class="text-center text-gray-500 py-10">Ajoutez d\'abord un événement.</p>';
+  if(!selectedEventId) selectedEventId = AppData.events[0].id;
+  const sorted = [...AppData.members].sort((a,b)=>a.fullName.localeCompare(b.fullName,'fr'));
+  let h = `<div class="bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600 p-4 mb-6 flex flex-wrap gap-4 items-center">
+    <div class="flex-1 min-w-[200px]"><label class="block text-sm font-medium mb-1">Événement</label>
+    <select onchange="selectedEventId=parseInt(this.value);initAttendanceFromStorage();renderView()" class="border rounded p-2 w-full dark:bg-slate-600 dark:border-slate-500">${AppData.events.map(e=>`<option value="${e.id}" ${e.id===selectedEventId?'selected':''}>${e.title||e.type+' - '+e.event_date}</option>`).join('')}</select></div>
+    <button onclick="openAddMemberModal()" class="bg-green-600 text-white px-3 py-2 rounded text-sm"><i class="fas fa-user-plus mr-1"></i> Ajouter un membre</button></div>`;
+  if(!sorted.length) h += '<p class="text-gray-500 text-center py-10">Aucun membre.</p>';
+  else {
+    h += `<div class="overflow-x-auto bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600"><table class="w-full text-sm">
+      <thead class="bg-gray-50 dark:bg-slate-600 text-left"><tr><th class="p-3">Nom et Prénom</th><th class="p-3">Pupitre</th><th class="p-3">Situation</th><th class="p-3">Motif</th></tr></thead>
+      <tbody>${sorted.map(m=>{ const att = currentAttendance[m.id]||{status:'Présent',motif:''};
+        return `<tr class="border-t dark:border-slate-500"><td class="p-3 font-medium">${m.fullName}</td><td class="p-3"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-200 dark:bg-slate-500">${m.pupitre}</span></td>
+        <td class="p-3"><select onchange="currentAttendance[${m.id}]={status:this.value,motif:currentAttendance[${m.id}]?.motif||''}" class="border rounded px-2 py-1 text-xs dark:bg-slate-600"><option value="Présent" ${att.status==='Présent'?'selected':''}>Présent</option><option value="Retard" ${att.status==='Retard'?'selected':''}>Retard</option><option value="Absent" ${att.status==='Absent'?'selected':''}>Absent</option></select></td>
+        <td class="p-3"><input type="text" value="${att.motif}" onchange="if(!currentAttendance[${m.id}])currentAttendance[${m.id}]={status:'Présent',motif:''};currentAttendance[${m.id}].motif=this.value" placeholder="Motif..." class="border rounded px-2 py-1 text-xs w-full dark:bg-slate-600"></td></tr>`;
+      }).join('')}</tbody></table></div>
+      <div class="mt-4 text-right"><button onclick="saveAttendance()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"><i class="fas fa-save mr-2"></i> Enregistrer les présences</button></div>`;
+  }
+  return h;
+}
+function saveAttendance() {
+  for(let mId in currentAttendance) {
+    const ex = AppData.attendances.find(a=>a.event_id===selectedEventId&&a.member_id==mId);
+    if(ex) { ex.status = currentAttendance[mId].status; ex.motif = currentAttendance[mId].motif; }
+    else AppData.attendances.push({id:Date.now()+Math.random(),event_id:selectedEventId,member_id:parseInt(mId),status:currentAttendance[mId].status,motif:currentAttendance[mId].motif});
+  }
+  saveAll(); notifyChange('présence','modification','Feuille enregistrée'); alert('Présences enregistrées !');
+}
+function openAddMemberModal() {
+  const m = `<h2 class="text-xl font-bold mb-4">Ajouter un membre</h2><form id="memberForm" class="space-y-3">
+    <input type="text" name="fullName" placeholder="Nom et Prénom" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <select name="pupitre" required class="w-full border p-2 rounded dark:bg-slate-600"><option value="">Pupitre</option><option>Soprano</option><option>Alto</option><option>Ténor</option><option>Basse</option></select>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Ajouter</button></div></form>`;
+  openModal(m);
+  document.getElementById('memberForm').onsubmit = e => {
+    e.preventDefault(); const fd = new FormData(e.target); const name = fd.get('fullName');
+    AppData.members.push({id:Date.now(),fullName:name,pupitre:fd.get('pupitre')});
+    saveAll(); closeModal(); renderView();
+    notifyChange('membre','ajout',name);
+  };
+}
+
+function renderEventsPage() {
+  const evs = [...AppData.events].sort((a,b)=>new Date(a.event_date)-new Date(b.event_date));
+  let h = `<div class="mb-4 flex justify-between items-center"><span class="text-gray-600">${evs.length} événement(s)</span><button onclick="openAddEventModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm"><i class="fas fa-plus mr-1"></i> Ajouter</button></div><div class="space-y-4">`;
+  evs.forEach(ev=>{
+    h += `<div class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600">
+      <div class="flex justify-between items-start"><div><h3 class="font-bold text-lg">${ev.title||ev.type+' - '+ev.event_date} <span class="text-xs bg-gray-200 dark:bg-slate-500 px-2 py-0.5 rounded-full">${ev.type||'Autre'}</span></h3>
+      <p class="text-sm text-gray-600 dark:text-gray-400">${ev.event_date} ${ev.heure?'à '+ev.heure:''} - ${ev.paroisse||''} ${ev.quartier?'('+ev.quartier+')':''}</p><p class="text-sm text-gray-500">${ev.details||''}</p></div>
+      <div class="flex gap-2"><button onclick="openEditEventModal(${ev.id})" class="text-blue-600"><i class="fas fa-edit"></i></button><button onclick="deleteEvent(${ev.id})" class="text-red-500"><i class="fas fa-trash"></i></button></div></div></div>`;
+  });
+  return h + '</div>';
+}
+function openAddEventModal(){ openEditEventModal(null); }
+function openEditEventModal(eventId){
+  const ev = eventId ? AppData.events.find(e=>e.id===eventId) : null;
+  const d = ev||{title:'',type:'Messe',event_date:'',heure:'',paroisse:'',quartier:'',details:''};
+  const m = `<h2 class="text-xl font-bold mb-4">${ev?'Modifier':'Ajouter'} un événement</h2><form id="eventForm" class="space-y-3">
+    ${ev?`<input type="text" name="title" placeholder="Titre" value="${d.title}" class="w-full border p-2 rounded dark:bg-slate-600">`:''}
+    <select name="type" class="w-full border p-2 rounded dark:bg-slate-600">
+      <option value="Messe" ${d.type==='Messe'?'selected':''}>Messe</option><option value="Concert" ${d.type==='Concert'?'selected':''}>Concert</option>
+      <option value="Réjouissances" ${d.type==='Réjouissances'?'selected':''}>Réjouissances</option><option value="Classe de chant" ${d.type==='Classe de chant'?'selected':''}>Classe de chant</option>
+      <option value="Autre" ${d.type==='Autre'?'selected':''}>Autre</option></select>
+    <div class="grid grid-cols-2 gap-2"><input type="date" name="event_date" value="${d.event_date}" required class="w-full border p-2 rounded dark:bg-slate-600"><input type="time" name="heure" value="${d.heure}" class="w-full border p-2 rounded dark:bg-slate-600"></div>
+    <input type="text" name="paroisse" placeholder="Paroisse" value="${d.paroisse||''}" class="w-full border p-2 rounded dark:bg-slate-600">
+    <input type="text" name="quartier" placeholder="Quartier" value="${d.quartier||''}" class="w-full border p-2 rounded dark:bg-slate-600">
+    <textarea name="details" placeholder="Détails" class="w-full border p-2 rounded dark:bg-slate-600" rows="3">${d.details||''}</textarea>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Enregistrer</button></div></form>`;
+  openModal(m);
+  document.getElementById('eventForm').onsubmit = e => {
+    e.preventDefault(); const fd = new FormData(e.target);
+    const newEv = {id:ev?ev.id:Date.now(),title:ev?fd.get('title'):`${fd.get('type')} du ${fd.get('event_date')}`,type:fd.get('type'),event_date:fd.get('event_date'),heure:fd.get('heure'),paroisse:fd.get('paroisse'),quartier:fd.get('quartier'),details:fd.get('details')};
+    if(ev){ const idx=AppData.events.findIndex(e=>e.id===ev.id); if(idx!==-1) AppData.events[idx]=newEv; } else AppData.events.push(newEv);
+    if(!selectedEventId) selectedEventId=newEv.id;
+    saveAll(); closeModal(); renderView();
+    notifyChange('événement',ev?'modification':'ajout',newEv.title);
+  };
+}
+function deleteEvent(id){
+  if(!confirm('Supprimer cet événement ?')) return;
+  const ev = AppData.events.find(e=>e.id===id);
+  AppData.events = AppData.events.filter(e=>e.id!==id);
+  AppData.attendances = AppData.attendances.filter(a=>a.event_id!==id);
+  if(selectedEventId===id) selectedEventId = AppData.events[0]?.id||null;
+  saveAll(); initAttendanceFromStorage(); renderView();
+  notifyChange('événement','suppression',ev?.title||'');
+}
+
+function renderInventorySection(){
+  return `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">Inventaire</h3><button onclick="openAddInventoryModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> Ajouter</button></div>
+  <div class="space-y-3">${AppData.inventory.map(i=>`<div class="bg-white dark:bg-slate-700 p-3 rounded-lg shadow-sm border dark:border-slate-600"><p class="font-medium">${i.domaine?i.domaine+' - ':''}${i.name} (x${i.qty}) - <span class="text-xs">${i.condition}</span></p></div>`).join('')||'<p class="text-gray-500">Aucun matériel</p>'}</div>`;
+}
+function openAddInventoryModal(){
+  const m = `<h2 class="text-xl font-bold mb-4">Ajouter matériel</h2><form id="invForm" class="space-y-3">
+    <input type="text" name="domaine" placeholder="Domaine" class="w-full border p-2 rounded dark:bg-slate-600">
+    <input type="text" name="name" placeholder="Nom" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <input type="number" name="qty" placeholder="Quantité" value="1" class="w-full border p-2 rounded dark:bg-slate-600">
+    <select name="condition" class="w-full border p-2 rounded dark:bg-slate-600"><option>Neuf</option><option>Bon état</option><option>Endommagé</option><option>A remplacer</option><option>À réparer</option></select>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Ajouter</button></div></form>`;
+  openModal(m);
+  document.getElementById('invForm').onsubmit = e => { e.preventDefault(); const fd=new FormData(e.target); AppData.inventory.push({id:Date.now(),domaine:fd.get('domaine'),name:fd.get('name'),qty:fd.get('qty'),condition:fd.get('condition')}); saveAll(); closeModal(); renderView(); notifyChange('matériel','ajout',fd.get('name')); };
+}
+
+function renderPVSection(){
+  return `<div class="flex justify-between items-center mb-4"><h3 class="text-xl font-bold">Procès-Verbaux</h3><button onclick="openAddPVModal()" class="text-blue-600"><i class="fas fa-plus-circle"></i> Nouveau</button></div>
+  <div class="space-y-3">${AppData.minutes.map(p=>`<div class="bg-white dark:bg-slate-700 p-3 rounded-lg shadow-sm border dark:border-slate-600"><p class="font-medium">${p.title} <span class="text-sm text-gray-500">${p.date}</span></p></div>`).join('')||'<p class="text-gray-500">Aucun PV</p>'}</div>`;
+}
+function openAddPVModal(){
+  const m = `<h2 class="text-xl font-bold mb-4">Nouveau PV</h2><form id="pvForm" class="space-y-3">
+    <input type="text" name="title" placeholder="Titre" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <input type="date" name="date" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <textarea name="content" placeholder="Contenu" class="w-full border p-2 rounded dark:bg-slate-600" rows="5"></textarea>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Enregistrer</button></div></form>`;
+  openModal(m);
+  document.getElementById('pvForm').onsubmit = e => { e.preventDefault(); const fd=new FormData(e.target); AppData.minutes.push({id:Date.now(),title:fd.get('title'),date:fd.get('date'),content:fd.get('content')}); saveAll(); closeModal(); renderView(); notifyChange('pv','ajout',fd.get('title')); };
+}
+
+function renderProgrammeContent(){
+  const progs = [...AppData.programme].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  return `<div class="mb-4 flex justify-between items-center"><span class="text-gray-600">${progs.length} programme(s)</span><button onclick="openAddProgrammeModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm"><i class="fas fa-plus mr-1"></i> Ajouter</button></div>
+  <div class="space-y-4">${progs.length? progs.map(p=>`<div class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex justify-between items-start"><div><h3 class="font-bold text-lg">${p.title}</h3><p class="text-sm text-gray-500">${p.date} - ${p.details||''}</p></div><div class="flex gap-2"><button onclick="openAddProgrammeModal(${JSON.stringify(p).replace(/"/g,'&quot;')})" class="text-blue-600"><i class="fas fa-edit"></i></button><button onclick="deleteProgramme(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button></div></div></div>`).join(''): '<p class="text-gray-500 italic">Aucun programme</p>'}</div>`;
+}
+function openAddProgrammeModal(edit=null){
+  const p = edit||{title:'',details:'',date:new Date().toISOString().split('T')[0]};
+  const m = `<h2 class="text-xl font-bold mb-4">${edit?'Modifier':'Ajouter'} un programme</h2><form id="progForm" class="space-y-3">
+    <input type="text" name="title" placeholder="Titre" value="${p.title}" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <textarea name="details" placeholder="Détails" class="w-full border p-2 rounded dark:bg-slate-600" rows="3">${p.details||''}</textarea>
+    <input type="date" name="date" value="${p.date}" required class="w-full border p-2 rounded dark:bg-slate-600">
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Enregistrer</button></div></form>`;
+  openModal(m);
+  document.getElementById('progForm').onsubmit = e => {
+    e.preventDefault(); const fd=new FormData(e.target);
+    const data = {id:edit?edit.id:Date.now(),title:fd.get('title'),details:fd.get('details'),date:fd.get('date')};
+    if(edit){ const idx=AppData.programme.findIndex(p=>p.id===edit.id); if(idx!==-1) AppData.programme[idx]=data; }
+    else AppData.programme.push(data);
+    saveAll(); closeModal(); renderView();
+    notifyChange('programme',edit?'modification':'ajout',data.title);
+  };
+}
+function deleteProgramme(id){
+  if(!confirm('Supprimer ce programme ?')) return;
+  const prog = AppData.programme.find(p=>p.id===id);
+  AppData.programme = AppData.programme.filter(p=>p.id!==id);
+  saveAll(); renderView();
+  notifyChange('programme','suppression',prog?.title||'');
+}
+
+// ---------- MESSE ----------
+function renderMassPage(){
+  const progs = [...AppData.massPrograms].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  let h = `<div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">Messe</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button></div>
+  <div class="mb-4 flex justify-between items-center"><span class="text-gray-600">${progs.length} programme(s)</span><button onclick="openAddMassProgramModal()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm"><i class="fas fa-plus mr-1"></i> Ajouter</button></div><div class="space-y-4">`;
+  progs.forEach(p=>{
+    h += `<div class="bg-white dark:bg-slate-700 p-4 rounded-xl shadow-sm border dark:border-slate-600"><div class="flex justify-between items-start"><div><h3 class="font-bold text-lg">Messe du ${p.date} ${p.title?'- '+p.title:''}</h3><p class="text-sm text-gray-600 dark:text-gray-400">Procession: ${p.procession||'-'} | Communion: ${p.communion||'-'}</p></div><div class="flex gap-2"><button onclick="openEditMassProgramModal(${p.id})" class="text-blue-600"><i class="fas fa-edit"></i></button><button onclick="deleteMassProgram(${p.id})" class="text-red-500"><i class="fas fa-trash"></i></button></div></div></div>`;
+  });
+  return h + '</div>';
+}
+function openAddMassProgramModal(){ openEditMassProgramModal(null); }
+function openEditMassProgramModal(progId){
+  const prog = progId ? AppData.massPrograms.find(p=>p.id===progId) : null;
+  const d = prog||{date:new Date().toISOString().split('T')[0],title:'',procession:'',entree:'',kyrie:'',gloria:'',psaume:'',acclamation:'',epiclese:'',credo:'',pu:'',offrande:'',sanctus:'',agnus_dei:'',communion:'',quete_construction:'',envoi:''};
+  const fields = [['Procession','procession'],['Entrée','entree'],['Kyrie','kyrie'],['Gloria','gloria'],['Psaume','psaume'],['Acclamation','acclamation'],['Épiclèse','epiclese'],['Credo','credo'],['Prière universelle','pu'],['Offrande','offrande'],['Sanctus','sanctus'],['Agnus Dei','agnus_dei'],['Communion','communion'],['Quête construction','quete_construction'],['Envoi','envoi']];
+  const m = `<h2 class="text-xl font-bold mb-4">${prog?'Modifier':'Ajouter'} un programme de messe</h2><form id="massForm" class="space-y-3">
+    <div class="grid grid-cols-2 gap-2"><input type="date" name="date" value="${d.date}" required class="w-full border p-2 rounded dark:bg-slate-600"><input type="text" name="title" placeholder="Titre" value="${d.title}" class="w-full border p-2 rounded dark:bg-slate-600"></div>
+    <div class="space-y-2 text-sm">${fields.map(([k,n])=>`<div><label class="block font-medium"> ${k}</label><input type="text" name="${n}" value="${d[n]||''}" class="w-full border p-2 rounded mt-1 dark:bg-slate-600"></div>`).join('')}</div>
+    <div class="flex justify-end gap-3"><button type="button" onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-500 rounded">Annuler</button><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Enregistrer</button></div></form>`;
+  openModal(m);
+  document.getElementById('massForm').onsubmit = e => {
+    e.preventDefault(); const fd=new FormData(e.target);
+    const np = {id:prog?prog.id:Date.now(),date:fd.get('date'),title:fd.get('title')};
+    fields.forEach(([_,n])=> np[n] = fd.get(n));
+    if(prog){ const idx=AppData.massPrograms.findIndex(p=>p.id===prog.id); if(idx!==-1) AppData.massPrograms[idx]=np; }
+    else AppData.massPrograms.push(np);
+    saveAll(); closeModal(); renderView();
+    notifyChange('messe',prog?'modification':'ajout',np.title||`Messe du ${np.date}`);
+  };
+}
+function deleteMassProgram(id){
+  if(!confirm('Supprimer ce programme ?')) return;
+  const prog = AppData.massPrograms.find(p=>p.id===id);
+  AppData.massPrograms = AppData.massPrograms.filter(p=>p.id!==id);
+  saveAll(); renderView();
+  notifyChange('messe','suppression',prog?.title||'');
+}
+
+// ---------- PARAMÈTRES ----------
+function renderSettings(){
+  return `
+  <div class="mb-6 flex items-center justify-between"><h2 class="text-2xl font-bold">Paramètres</h2><button onclick="openSidebar()" class="lg:hidden text-slate-700 dark:text-white text-2xl"><i class="fas fa-bars"></i></button></div>
+  <div class="bg-white dark:bg-slate-700 rounded-xl shadow-sm border dark:border-slate-600 p-6 space-y-4 max-w-md">
+    <div><label class="block font-medium mb-2">Mode sombre</label><select onchange="setTheme(this.value)" class="border rounded p-2 w-full dark:bg-slate-600"><option value="system" ${(!themePref||themePref==='system')?'selected':''}>Système (auto)</option><option value="light" ${themePref==='light'?'selected':''}>Clair</option><option value="dark" ${themePref==='dark'?'selected':''}>Sombre</option></select></div>
+    <div><label class="block font-medium mb-2">Notifications</label><div class="flex gap-2"><button onclick="requestNotificationPermission()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm">Activer</button><button onclick="notificationsEnabled=false;localStorage.setItem('notifications','false');showToast('Notifications','Désactivées')" class="bg-gray-400 text-white px-4 py-2 rounded text-sm">Désactiver</button></div><p class="text-xs text-gray-500 mt-2">${notificationsEnabled?'Notifications activées':'Notifications désactivées'}</p></div>
+    <button onclick="exportAllData()" class="w-full bg-blue-600 text-white py-2 rounded"><i class="fas fa-download mr-2"></i>Exporter les données</button>
+    <label class="w-full bg-gray-200 dark:bg-slate-500 py-2 rounded cursor-pointer block text-center"><i class="fas fa-upload mr-2"></i>Importer des données<input type="file" accept=".json" onchange="importAllData(this.files[0])" class="hidden"></label>
+    <button onclick="resetAllData()" class="w-full bg-red-600 text-white py-2 rounded"><i class="fas fa-trash-alt mr-2"></i>Réinitialiser</button>
+  </div>`;
+}
+
+// ---------- MODAL ----------
+function openModal(content){ document.getElementById('modalContent').innerHTML=content; document.getElementById('modal').classList.remove('hidden'); document.getElementById('modal').classList.add('flex'); }
+function closeModal(){ document.getElementById('modal').classList.add('hidden'); document.getElementById('modal').classList.remove('flex'); }
+document.getElementById('modal').addEventListener('click',(e)=>{ if(e.target===document.getElementById('modal')) closeModal(); });
+
+// ---------- INIT ----------
+loadData();
+buildNavigation();
+pushAppState();
+navigateTo('dashboard');
+if (notificationsEnabled && supportsNotifications && Notification.permission==='granted') {
+  scheduleReminders();
+  setInterval(scheduleReminders, 3600000);
+}
+
+// Exposer les fonctions globales
+window.toggleSidebar = toggleSidebar;
+window.openSidebar = openSidebar;
+window.navigateTo = navigateTo;
+window.exportAllData = exportAllData;
+window.importAllData = importAllData;
+window.resetAllData = resetAllData;
+window.requestNotificationPermission = requestNotificationPermission;
+window.setTheme = setTheme;
+</script>
+</body>
+</html>
