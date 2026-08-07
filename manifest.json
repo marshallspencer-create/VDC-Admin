@@ -1,0 +1,17 @@
+{
+  "name": "VDC Admin",
+  "short_name": "VDC",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "description": "Gestion interne de la chorale La Voix des Chérubins",
+  "icons": [
+    {
+      "src": "logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
